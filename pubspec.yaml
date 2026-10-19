@@ -19,6 +19,7 @@ dependencies:
 
   # 前台服务保活（Doze 下 MCP 应答须持 CPU 键+Wi-Fi 键，拾贝/拾光实测踩坑件）
   flutter_foreground_task: ^11.0.3
+  decimal: ^3.2.6
 
 dev_dependencies:
   flutter_test:

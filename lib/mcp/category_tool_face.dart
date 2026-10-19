@@ -9,6 +9,7 @@
 // 具体子操作实现类（`_XxxSub`）仍以 `_` 前缀私有于各自分类文件。
 library;
 
+import 'dart:convert';
 import '../action/command_gateway.dart';
 import 'tool_face.dart';
 
@@ -22,7 +23,8 @@ class SubActionResult {
   const SubActionResult.success(this.content)
       : isError = false,
         errorCode = null,
-        errorMessage = null;
+        errorMessage = null,
+        _jsonError = null;
 
   /// [code] 为**裸机器码**（如 `PERMISSION_DENIED`、`UNEXPECTED_TOKEN`）；
   /// `category.action:` 前缀由 [CategoryTool.call] 在派发层统一注入（G1）。
@@ -30,9 +32,33 @@ class SubActionResult {
       : content = [
           {'type': 'text', 'text': '[$errorCode] $errorMessage'}
         ],
+        isError = true,
+        _jsonError = null;
+
+  /// 结构化错误：content 为 JSON 文本，携带 calculator.md 自愈字段
+  /// （offset / candidates / suggestion / expression）。前缀由 [withPrefix]
+  /// 注入到 JSON 内的 `error.code`，不丢失自愈字段（G1/G5）。
+  SubActionResult.structuredError(this.errorCode, this.errorMessage, this._jsonError)
+      : content = [
+          {
+            'type': 'text',
+            'text': jsonEncode(<String, Object?>{
+              'success': false,
+              'error': _jsonError,
+            }),
+          }
+        ],
         isError = true;
 
-  /// MCP content 列表（成功态 = 业务输出；错误态由构造器渲染为 `[code] msg`）。
+  SubActionResult._raw({
+    required this.content,
+    required this.isError,
+    this.errorCode,
+    this.errorMessage,
+  }) : _jsonError = null;
+
+  /// MCP content 列表（成功态 = 业务输出；错误态由构造器渲染为 `[code] msg`
+  /// 或结构化 JSON 错误）。
   final List<Map<String, Object?>> content;
 
   /// 是否业务失败（MCP 顶层字段，客户端据此判定成败）。
@@ -44,6 +70,9 @@ class SubActionResult {
   /// 人类可读说明（错误态非空）。
   final String? errorMessage;
 
+  /// 结构化错误自愈字段（仅 [structuredError] 构造时非空）。
+  final Map<String, Object?>? _jsonError;
+
   /// 内容信封语义；与 MCP `isError` 同源派生（G4）。
   bool get success => !isError;
 
@@ -51,10 +80,32 @@ class SubActionResult {
   Map<String, Object?> toMcpResult() => {'content': content, 'isError': isError};
 
   /// 派发层注入 `category.action:` 前缀；子操作只吐裸 code（G1/G5）。
-  SubActionResult withPrefix(String category, String action) => isError
-      ? SubActionResult.error(
-          '$category.$action: ${errorCode ?? 'UNKNOWN'}', errorMessage ?? '')
-      : this;
+  ///
+  /// 结构化错误（[structuredError]）原地改写 JSON 内 `error.code` 为带前缀版本，
+  /// 保留 offset/candidates 等自愈字段；非结构化错误走原 `[前缀:code] msg` 文本。
+  SubActionResult withPrefix(String category, String action) {
+    if (!isError) return this;
+    final prefixed = '$category.$action: ${errorCode ?? 'UNKNOWN'}';
+    if (_jsonError != null) {
+      final j = <String, Object?>{..._jsonError};
+      j['code'] = prefixed;
+      return SubActionResult._raw(
+        content: [
+          {
+            'type': 'text',
+            'text': jsonEncode(<String, Object?>{
+              'success': false,
+              'error': j,
+            }),
+          }
+        ],
+        isError: true,
+        errorCode: prefixed,
+        errorMessage: errorMessage ?? '',
+      );
+    }
+    return SubActionResult.error(prefixed, errorMessage ?? '');
+  }
 }
 
 /// 子操作契约：一个细粒度能力（如 `geo_compass`、`calendar_marker_add`）。
@@ -102,7 +153,10 @@ class CategoryTool {
   final String categoryDescription;
 
   /// 写门禁端口（唯一写入口，standards §2.3 / G3）。
-  final CommandGateway commandGateway;
+  ///
+  /// R 档-only 分类（如 `math_utility`）无写操作，可传 `null`——[call] 仅在
+  /// 遇到 W 档子操作时才触达本端口（物理上不可能被 R 档执行体穿透）。
+  final CommandGateway? commandGateway;
 
   final Map<String, SubAction> _subs = {};
 
@@ -144,14 +198,21 @@ class CategoryTool {
     if (sub == null) {
       result = SubActionResult.error(
           'UNKNOWN_ACTION', '分类 $categoryName 无指令 $action');
-    } else if (sub.isWrite && !commandGateway.admits(action, params)) {
-      // G3 写门禁：子操作执行体之前拦截，物理级无法穿透
-      result = SubActionResult.error(
-          'PERMISSION_DENIED', 'Write operation unauthorized');
     } else if (sub.isWrite) {
-      // 唯一写入口：W 档由网关层统一 dispatch，子操作只构造命令
-      result = SubActionResult.success(
-          await commandGateway.dispatch(sub.buildCommand(params)));
+      // G3 写门禁：子操作执行体之前拦截，物理级无法穿透
+      final gw = commandGateway;
+      if (gw == null) {
+        // R 档-only 分类未配置网关：W 档子操作物理上不可达，fail-closed。
+        result = SubActionResult.error(
+            'PERMISSION_DENIED', '写操作未配置网关（gateway 为 null）');
+      } else if (!gw.admits(action, params)) {
+        result = SubActionResult.error(
+            'PERMISSION_DENIED', 'Write operation unauthorized');
+      } else {
+        // 唯一写入口：W 档由网关层统一 dispatch，子操作只构造命令
+        result = SubActionResult.success(
+            await gw.dispatch(sub.buildCommand(params)));
+      }
     } else {
       result = await sub.execute(params);
     }

@@ -16,13 +16,15 @@ updated: 2026-10-20
 | 命令层（唯一写入口） | CommandGateway 分发，写必走 CommandHandler | `lib/action/command_gateway.dart` | 工程规范 §2：R1 前瞻——UI 引入后写路径须组装命令交 CommandHandler |
 | 服务层 | Android 前台服务保活、HTTP 传输、MCP 控制 | `lib/service/foreground_task_init.dart`、`lib/service/http_transport.dart`、`lib/service/mcp_controller.dart` | 无头系统：删 UI 后此层须能独立跑通 |
 | 工具面扩展 | 工具面样例（新工具照此注册）/ 领域网关 | `lib/tools/sample_tool_face.dart` | 新 MCP 工具以此为实现模板；领域网关模式见 `domain_gateway.md` |
+| 工具面扩展 | 计算器能力内核：单位注册表 + 换算引擎（纯 Dart 无头） | `lib/tools/math/unit_definition.dart`、`lib/tools/math/unit_registry.dart`、`lib/tools/math/convert_result.dart`、`lib/tools/math/unit_converter.dart` | 11 量纲 × 4 transform（linear/affine/reciprocal/iecSi）；别名归一化**单一真相源**，别名冲突 fail-fast；基准单位走显式表（≠ dimension 名）；契约见 `product/calculator.md` 附录 A |
+| 工具面扩展 | 计算器表达式内核：Sanitizer + Lexer + Parser + Evaluator（纯 Dart 无头） | `lib/tools/math/math_error.dart`、`lib/tools/math/expression_sanitizer.dart`、`lib/tools/math/expression_lexer.dart`、`lib/tools/math/expression_parser.dart`、`lib/tools/math/expression_evaluator.dart` | Sanitizer 全角/`×`/`÷`/千分位/币种符保守清洗 + cleaned→original 位移回填；Lexer 单位 run 仅被 `to` 确认；Parser 递归下降产出 AST（`^` 右结合 / 一元负号低于 `^` / 隐式乘法 / `A+B%` 歧义 warning / `NESTING_TOO_DEEP`）；Evaluator 走 **Decimal 主链路**（`0.1+0.2=0.3` 精确）+ DoS 红线 `EVAL_STEP_LIMIT`，超越函数/单位换算因固有非精确走 double 回装 Decimal（非静默降级） |
 | 自更新 | 安装器、远程配置热更、更新清单、更新服务 | `lib/update/installer.dart`、`lib/update/remote_config_store.dart`、`lib/update/update_manifest.dart`、`lib/update/update_service.dart` | 发布链路见 workflow skill 的 `release-r2` |
 | 地理/地图内核 | 坐标纠偏（WGS-84↔GCJ-02↔BD-09）、Haversine 测距 | `lib/geo/coord_convert.dart` | 纯 Dart 无头，arch-guard R4；WGS-84→GCJ-02 自动归一 |
 | 地理/地图内核 | 高德静态图 URL 构建器（免 Native 3D SDK 轻量渲染） | `lib/geo/static_map_url.dart` | 入参可声明任意坐标系，内部归一化到 GCJ-02；集成 sig 签名 / RDP 抽稀 / Auto-bounding 视口自适应 |
 | 地理/地图内核 | 高德数字签名（Sig/MD5） | `lib/geo/amap_sign.dart` | 参数升序拼接 + secret → MD5，防 INVALID_USER_SCODE |
 | 地理/地图内核 | 轨迹抽稀（RDP） | `lib/geo/rdp.dart` | 道格拉斯-普克，折线硬性≤80 点，防 URL 超 2048 触发 414 |
 | 地理/地图内核 | 高德 HTTP / 位置传感器端口（依赖反转接缝） | `lib/mcp/geo_provider.dart` | 对齐 `weather_provider.dart`；未注入源抛 `ERR_AMAP_KEY_MISSING`（工程规范 §1.2） |
-| 测试 | 纯 Dart 内核全链路测试（无设备可跑） | `test/smoke_test.dart`、`test/geo_test.dart`、`test/category_gateway_test.dart` | 覆盖 InMemoryKv / CommandGateway / McpServer / 坐标互转闭环 / 静态图 URL / 八方位 / 网关派发契约（枚举外拦截、写门禁拦截、错误前缀注入、isError 唯一派生） |
+| 测试 | 纯 Dart 内核全链路测试（无设备可跑） | `test/smoke_test.dart`、`test/geo_test.dart`、`test/category_gateway_test.dart`、`test/unit_converter_test.dart`、`test/expression_lexer_test.dart`、`test/expression_parser_test.dart`、`test/expression_evaluator_test.dart` | 覆盖 InMemoryKv / CommandGateway / McpServer / 坐标互转闭环 / 静态图 URL / 八方位 / 网关派发契约（枚举外拦截、写门禁拦截、错误前缀注入、isError 唯一派生）/ 单位换算四模型与 reciprocal 跨制反比 / Sanitizer 保守清洗与位移回填 / 解析器优先级-结合性、隐式乘法、百分比歧义 warning、嵌套深度红线 / 求值器 Decimal 精确性、运算符语义、超越函数、单位换算、错误码与 EVAL_STEP_LIMIT |
 
 ## 2. 文档落点
 

@@ -10,5 +10,10 @@ last-merge: none
 
 - [挂载] docs/project/domain_gateway.md
 
+## 进度
+- 2026-10-20 **S1–S2 契约层已落地并全绿**：`McpToolFace.call` 返回完整 result，内核只透传；`lib/mcp/category_tool_face.dart` 四件套（SubAction/SubActionResult/CategoryTool/CategoryToolFace），单一出口保证 `category.action:code` 前缀不被早退绕过。
+- **S3 calculator 数学内核（S3a–S3d）已迁移至 epics/calculator**（进度/决策/变更明细见该 epic memory + devlog）。
+- 全链路现状（2026-10-20）：142 tests + arch-guard 6 条 + docs-lint 全绿。
+
 ## 断点
-- [断点] 下一步：下一步：S3 —— 落地 math_utility 分类（calc_eval/unit_convert/unit_list）+ 纯 Dart 求值换算内核（Decimal + Shunting-yard + 11 量纲 4 transform），作为网关范式验证位
+- [断点] 下一步：S7 装配收口（McpController.toolFaceFactory 收口各 buildXxxTool 并注入 Provider）+ S8 Contract 收尾
