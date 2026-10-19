@@ -14,10 +14,12 @@ class _PongFace implements McpToolFace {
   List<Map<String, Object?>> schemas() => const [];
 
   @override
-  Future<List<Map<String, Object?>>> call(String name, Map<String, Object?> args) async =>
-      const [
-        {'type': 'text', 'text': 'pong'}
-      ];
+  Future<Map<String, Object?>> call(String name, Map<String, Object?> args) async => {
+        'content': [
+          {'type': 'text', 'text': 'pong'}
+        ],
+        'isError': false,
+      };
 }
 
 void main() {

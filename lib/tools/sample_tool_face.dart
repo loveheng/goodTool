@@ -38,23 +38,30 @@ class SampleToolFace implements McpToolFace {
       ];
 
   @override
-  Future<List<Map<String, Object?>>> call(
+  Future<Map<String, Object?>> call(
     String name,
     Map<String, Object?> args,
   ) async {
     switch (name) {
       case 'ping':
-        return [
-          {'type': 'text', 'text': 'pong (good_template toolface v0.1)'}
-        ];
+        return {
+          'content': [
+            {'type': 'text', 'text': 'pong (good_template toolface v0.1)'}
+          ],
+          'isError': false,
+        };
       case 'note_put':
         // 唯一写入口：一切 AI 写操作经 CommandGateway 分发，禁绕过
         final content = await gateway.dispatch(_NotePutCommand(args));
-        return content;
+        return {'content': content, 'isError': false};
       default:
-        return [
-          {'type': 'text', 'text': '未知工具: $name'}
-        ];
+        // 未知工具 = 失败（isError: true），不得让 Agent 误判为成功
+        return {
+          'content': [
+            {'type': 'text', 'text': '未知工具: $name'}
+          ],
+          'isError': true,
+        };
     }
   }
 }

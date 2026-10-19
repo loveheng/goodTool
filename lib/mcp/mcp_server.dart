@@ -111,11 +111,13 @@ class McpServer {
         final args = p['arguments'] is Map<String, Object?>
             ? p['arguments'] as Map<String, Object?>
             : <String, Object?>{};
-        final content = await toolFace.call(name, args);
+        // 透传工具面产出的完整 result（含 isError）——内核不再硬编码 false，
+        // 否则含"错误"字样的失败文本会被客户端当作成功（standards §3.3 G4）。
+        final result = await toolFace.call(name, args);
         if (name == 'suggest_user_setting') {
           onSuggestion?.call(args);
         }
-        return {'content': content, 'isError': false};
+        return result;
       case 'resources/list':
         return {'resources': <Map<String, Object?>>[]};
       case 'prompts/list':
