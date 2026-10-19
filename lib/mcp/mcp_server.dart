@@ -14,10 +14,9 @@ class McpServer {
     required this.toolFace,
     required this.tokenProvider,
     this.instructionsProvider,
-    this.onSuggestion,
   });
 
-  /// 工具面端口（宿主注入；拾光侧 = ShiguangToolFace 适配器）。
+  /// 工具面端口（宿主注入；本 app = tool_face_assembly.dart 装配的领域网关）。
   final McpToolFace toolFace;
 
   /// 返回当前生效 token；为空表示关闭鉴权。
@@ -26,8 +25,9 @@ class McpServer {
   /// initialize 返回的 instructions；非空时覆盖内置文案（配置热更入口）。
   final Future<String?> Function()? instructionsProvider;
 
-  /// AI 经 suggest_user_setting 推送「建议用户改设置」时的回调（app 借此弹提示）。
-  final void Function(Map<String, Object?>)? onSuggestion;
+  /// 线级对外标识（MCP `serverInfo`）：跟随本 app 包名与版本，勿留模板项目名。
+  static const String serverName = 'good_template';
+  static const String serverVersion = '0.1.0';
 
   /// 政策精华（§7 行为层第一层）：每次 initialize 必读。
   static const _builtinInstructions =
@@ -95,7 +95,7 @@ class McpServer {
           'capabilities': {
             'tools': {'listChanged': false},
           },
-          'serverInfo': {'name': 'shiguang', 'version': '1.0.0'},
+          'serverInfo': {'name': serverName, 'version': serverVersion},
           'instructions': instructionsProvider == null
               ? _builtinInstructions
               : (await instructionsProvider!() ?? _builtinInstructions),
@@ -113,11 +113,8 @@ class McpServer {
             : <String, Object?>{};
         // 透传工具面产出的完整 result（含 isError）——内核不再硬编码 false，
         // 否则含"错误"字样的失败文本会被客户端当作成功（standards §3.3 G4）。
-        final result = await toolFace.call(name, args);
-        if (name == 'suggest_user_setting') {
-          onSuggestion?.call(args);
-        }
-        return result;
+        // 内核**不按工具名做业务特例**（S8 收尾）：任何业务语义由工具面自行承载。
+        return await toolFace.call(name, args);
       case 'resources/list':
         return {'resources': <Map<String, Object?>>[]};
       case 'prompts/list':

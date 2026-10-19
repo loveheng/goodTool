@@ -11,3 +11,7 @@ last-merge: 2026-10-20
 - [2026-10-20] [决策]: 装配工厂落**装配件**而非 service/tools——`service`（McpController）出向不含 `tools`、`tools` 出向不含 `service`（真实 Provider 住 service 层），只有装配件可跨域 import，故不在 `mcp_controller.dart` 内收口。
 - [2026-10-20] [决策]: arch-guard 启用 R7 走「退役」而非「白名单」——白名单纪律只减不增，故 S7 提前退役 `lib/tools/sample_tool_face.dart`（原属 S8），连同 `ports.dart`/`docs/product/overview.md`/`index.md` 引用一并清理，R7 零白名单上线。
 - [2026-10-20] [收口]: arch-guard 6→7 条（新增 `lib/tools` 禁 dispatch/admits 调用），self-test 补坏样本与干净样本各一（防误报）；analyze 0 issue；flutter test 全绿 202（新增 tool_face_assembly 12 + amap_http_provider 6）。
+- [2026-10-20] [变更]: S8 Contract 收尾——核查确认旧返回形状兼容层零残留；删除 `McpServer._dispatch` 的 `suggest_user_setting` 工具名嗅探特例（内核不再感知业务工具名），建议通道上移为 `McpController.pushSuggestion()`（`suggestionStream` 语义不变）；`serverInfo.name` → `good_template`（`McpServer.serverName/serverVersion` 常量）、前台服务通知标题 → `goodTools`，清模板项目名残留。
+- [2026-10-20] [决策]: `pushSuggestion` 由**宿主显式调用**而非内核回调——内核嗅探工具名在网关模式下必然静默失效（线级无该工具），且把业务语义写进内核违反分层；端口保留在 service 层（controller）供设置域未来接线。
+- [2026-10-20] [遗留]: `McpServer._builtinInstructions` 仍是「拾光排程师」文案（自 shiguang 提取），与本 app 角色不符——重写需产品定位拍板，已登记域内待办，S8 不擅改。
+- [2026-10-20] [收口]: `smoke_test.dart` 补 3 条内核契约断言（错误态 isError 透传、serverInfo 非模板名、pushSuggestion 广播）；analyze 0 issue；flutter test 全绿 205。

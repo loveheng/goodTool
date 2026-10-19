@@ -38,7 +38,7 @@ flowchart TD
     D -->|handleJsonRpc| E
     E -->|schemas/call| F[McpToolFace 端口]
     F --> G[四大能力: 计算/日历/地理/天气]
-    E -. onSuggestion .-> H[App UI 弹提示]
+    E -. pushSuggestion .-> H[App UI 弹提示]
     I[前台服务保活 CPU锁+Wi-Fi锁] -. 持活 .-> B
     I -. 持活 .-> C
 ```
@@ -56,7 +56,7 @@ flowchart TD
 | Binder IPC | 同签名 goodhub 宿主进程 | 系统签名权限，零额外令牌 |
 | HTTP 回环 | 本机桌面桥 / 直连客户端 | `X-Api-Key` 令牌（App「MCP 服务」页可查），仅 127.0.0.1 可达 |
 
-敏感设置（用户身份画像、外观 `theme_mode`、天气城市等）仅用户本人在 App 设置页自设，Agent 经 `update_settings` 写入会被拒，只能推送「建议用户改设置」（`onSuggestion` → App 弹提示）。
+敏感设置（用户身份画像、外观 `theme_mode`、天气城市等）仅用户本人在 App 设置页自设，Agent 经 `update_settings` 写入会被拒，只能推送「建议用户改设置」（宿主经 `McpController.pushSuggestion` → App 弹提示；内核不按工具名嗅探业务语义）。
 
 ## 实现基线（现状）
 

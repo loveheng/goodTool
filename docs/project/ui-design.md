@@ -54,7 +54,7 @@ updated: 2026-10-20
 ```mermaid
 flowchart LR
     K[McpServer 纯 Dart 内核] -->|onCall 调用事件| BUS[调用事件流]
-    K -->|onSuggestion 建议| SUG[设置建议流]
+    K -->|pushSuggestion 建议| SUG[设置建议流]
     C[McpController ChangeNotifier] -->|running/port/token/lastError| UI
     BUS --> UI[lib/ui 订阅]
     SUG --> UI

@@ -28,10 +28,19 @@ class McpController extends ChangeNotifier {
   /// 工具面工厂（宿主装配业务工具面 + 天气等后端；内核不沾 Repository）。
   final McpToolFace Function() toolFaceFactory;
 
-  /// AI 经 suggest_user_setting 推送的「建议用户改设置」广播通道（app UI 监听弹提示）。
+  /// 「建议用户改设置」广播通道（app UI 监听弹提示，入口见 [pushSuggestion]）。
   final StreamController<Map<String, Object?>> _suggestionController =
       StreamController<Map<String, Object?>>.broadcast();
   Stream<Map<String, Object?>> get suggestionStream => _suggestionController.stream;
+
+  /// 宿主侧推送「建议用户改设置」（App UI 监听 [suggestionStream] 弹提示）。
+  ///
+  /// **S8 收尾后**：内核不再按工具名嗅探业务语义（原 `suggest_user_setting`
+  /// 特例已删——工具面无该工具，它只会静默失效）。建议通道改由宿主/工具面
+  /// 显式调用本方法，内核保持业务无关。
+  void pushSuggestion(Map<String, Object?> args) {
+    if (!_suggestionController.isClosed) _suggestionController.add(args);
+  }
 
   static const defaultPort = 8765;
 
@@ -88,7 +97,7 @@ class McpController extends ChangeNotifier {
         await ensureForegroundTaskInit();
         await FlutterForegroundTask.startService(
           serviceTypes: [ForegroundServiceTypes.dataSync],
-          notificationTitle: '拾光 · MCP 服务运行中',
+          notificationTitle: 'goodTools · MCP 服务运行中',
           notificationText: '仅本机回环（内部调试）；桌面先 adb reverse tcp:$defaultPort tcp:$defaultPort',
         );
       } catch (e) {
@@ -98,10 +107,6 @@ class McpController extends ChangeNotifier {
       _server ??= McpServer(
         toolFace: toolFaceFactory(),
         tokenProvider: () => _token,
-        // AI 经 suggest_user_setting 推送建议时，广播给 app UI 弹提示
-        onSuggestion: (args) {
-          if (!_suggestionController.isClosed) _suggestionController.add(args);
-        },
         // 系统提示词热更入口：远程下发的 mcpInstructions 可覆盖内置政策精华；
         // 用户自填身份画像（identity_prompt）始终拼接待尊重（即配即用）。
         instructionsProvider: () async {

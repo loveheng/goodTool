@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-10-19
+updated: 2026-10-20
 ---
 
 # goodTools · 日历能力（日历基准 + 重要事件标记 + 时间推演）
@@ -77,7 +77,7 @@ MCP 会话的 token 鉴权（`McpServer.tokenProvider` 返回非空）= 用户�
    - 域名 / 格式不匹配直接返回结构化错误码，不静默降级。
 2. **`unsubscribe` / `refresh` 仅作用于用户 store 中已存在的 `feedId`**：对不存在的 id 返回明确错误（`unsubscribe` 可幂等返回 success），Agent 无权凭空创建 / 越权操作。
 
-> 不引入 per-call 弹窗确认：内核当前仅有 `onSuggestion`（单向建议）无 confirm 回传通道；本地 token 即代表用户已授权，安全重心放在 **URL 护栏 + 作用域受限**。若 v1 需 per-call 确认，须新增 confirm 回传通道（架构改动，后续单列）。
+> 不引入 per-call 弹窗确认：当前仅有 `McpController.pushSuggestion`（单向建议）无 confirm 回传通道；本地 token 即代表用户已授权，安全重心放在 **URL 护栏 + 作用域受限**。若 v1 需 per-call 确认，须新增 confirm 回传通道（架构改动，后续单列）。
 
 ## 时区治理（Timezone Governance，B 拍板）
 

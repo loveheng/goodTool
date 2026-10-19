@@ -17,3 +17,5 @@ format: v2
 - [2026-10-20] S7 装配收口：新增 lib/tool_face_assembly.dart 单点收口 buildMathTool/buildGeoTool（HTTP + Binder 双通道共用）与 lib/service/amap_http_provider.dart 高德 REST 真实实现（Key 懒读）；geo 静态图配置改懒读 reader；退役 sample_tool_face.dart 并启用 arch-guard R7（tools 禁绕过网关写门禁）；新增 18 项单测（装配 12 + provider 6），门禁 202 全绿 (src: ai) (域: domain_gateway)
 - [2026-10-20] arch-guard 补网关写门禁扫描模式 R7（lib/tools 禁 dispatch/admits 调用），随 sample_tool_face.dart 退役零白名单启用；6 → 7 条，self-test 同步补样本 (src: ai) (域: misc)
 - [2026-10-20] index.md 域级锚点回填（tool_face_assembly / amap_http_provider / math_tool / geo_tool 及其测试），撤销已退役 sample 的落点 (src: ai) (域: misc)
+- [2026-10-20] S8 Contract 收尾：删除 McpServer._dispatch 的 suggest_user_setting 工具名嗅探特例（内核不再感知业务工具名），建议通道上移为 McpController.pushSuggestion；订正 serverInfo 与前台服务通知的模板项目名残留 (src: ai) (域: domain_gateway)
+- [2026-10-20] 风险项清零：McpServer._dispatch 的 suggest_user_setting 工具名特例（原将随网关改名静默失效）已在 S8 删除，四份文档口径同步为 pushSuggestion (src: ai) (域: misc)
