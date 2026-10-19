@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 高德 Web 服务（geo 域 geocode/reverse/search_poi/route/static_map）：
+         经 lib/service/amap_http_provider.dart 出网，无此权限 HTTP 请求直接失败。 -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="good_template"
         android:name="${applicationName}"

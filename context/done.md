@@ -14,3 +14,6 @@ format: v2
 - [2026-10-20] S3d Decimal 求值器 + DoS 阈值（EXPR_TOO_LONG/NESTING_TOO_DEEP/EVAL_STEP_LIMIT）；decimal 依赖引入须用户确认 (src: ai) (域: domain_gateway)
 - [2026-10-20] S3e math_utility 领域网关适配层 lib/tools/math/math_tool.dart：buildMathTool 注册 calc_eval/unit_convert/unit_list 三 R 档 SubAction；双轨出参（result 格式化串 + numericValue 无损数值，超 double 无损范围退化为 string）+ 结构化错误携带 offset/candidates/suggestion 并经 withPrefix 注入前缀；G5 宽容解析；11 项单测 (src: ai) (域: domain_gateway)
 - [2026-10-20] S4 geo 领域网关适配层 lib/tools/geo_tool.dart：buildGeoTool 注册 8 个 R 档 action（geo_current/geocode/reverse/search_poi/route/static_map/compass/distance），坐标 GCJ-02 归一化 + 静态图 URL 免 SDK 出图 + 错误全带 machine code；30 项单测 (src: ai) (域: domain_gateway)
+- [2026-10-20] S7 装配收口：新增 lib/tool_face_assembly.dart 单点收口 buildMathTool/buildGeoTool（HTTP + Binder 双通道共用）与 lib/service/amap_http_provider.dart 高德 REST 真实实现（Key 懒读）；geo 静态图配置改懒读 reader；退役 sample_tool_face.dart 并启用 arch-guard R7（tools 禁绕过网关写门禁）；新增 18 项单测（装配 12 + provider 6），门禁 202 全绿 (src: ai) (域: domain_gateway)
+- [2026-10-20] arch-guard 补网关写门禁扫描模式 R7（lib/tools 禁 dispatch/admits 调用），随 sample_tool_face.dart 退役零白名单启用；6 → 7 条，self-test 同步补样本 (src: ai) (域: misc)
+- [2026-10-20] index.md 域级锚点回填（tool_face_assembly / amap_http_provider / math_tool / geo_tool 及其测试），撤销已退役 sample 的落点 (src: ai) (域: misc)

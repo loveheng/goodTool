@@ -3,13 +3,13 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
-import 'action/command_gateway.dart';
 import 'mcp/mcp_server.dart';
-import 'tools/sample_tool_face.dart';
+import 'ports.dart';
+import 'tool_face_assembly.dart';
 
 /// 模板本地 Binder 插件后台入口（headless FlutterEngine，goodhub-local-plugin 终点）。
 /// 自 shiguang mcp_binder_entrypoint 提取：装配换成本模板端口件（InMemoryKv +
-/// SampleToolFace + CommandGateway），通道名/entrypoint 名随模板包名。
+/// buildDefaultToolFace），通道名/entrypoint 名随模板包名。
 ///
 /// 部署点：goodhub 经 `bindService(BIND_AUTO_CREATE)` 拉起原生 `McpBinderService`
 /// （android/app/src/main/kotlin/.../McpBinderService.kt），原生侧创建独立
@@ -23,8 +23,9 @@ import 'tools/sample_tool_face.dart';
 /// - 本 isolate 与 MainActivity 主 isolate 互相独立（各自一套 McpServer/存储），
 ///   故 Binder 路径不依赖 app 是否在前台——满足「随调随起」。
 /// - 不走主壳装配（那会起 HTTP 监听/前台服务/远程配置，Binder isolate 只要 MCP 内核）。
-/// - **模板待替换**：示例工具面/内存 KV 仅示范装配形状；新 app 接真实存储与
-///   工具面时替换 [_toolFace] 装配（Binder 与 HTTP 通道应共用同一工具面实现）。
+/// - **装配单一真相源**：工具面经 `tool_face_assembly.dart` 的
+///   [buildDefaultToolFace] 装配，与 HTTP 通道（main.dart）**共用同一份**——
+///   新增能力只改装配工厂，两通道同步生效（禁各自装配导致的能力漂移）。
 ///
 /// F1 `_async`+onEvent 终帧切片（契约 thirdconnect.md §1.2.2）：tools/call 由原生侧
 /// 立回 `{"_async":true}` 占位帧，dispatch 照旧同步返回完整 JSON-RPC 响应字符串，
@@ -37,10 +38,9 @@ void mcpBinderMain() {
   // 后台 isolate 无 UI，但 MethodChannel 需要 ServicesBinding 初始化。
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 模板装配：内存 KV（真实 app 换持久化实现）+ 示例工具面（真实 app 换自己的）。
-  final gateway = CommandGateway();
+  // 模板装配：内存 KV（真实 app 换持久化实现）+ 共用工具面装配（见 tool_face_assembly.dart）。
   final server = McpServer(
-    toolFace: SampleToolFace(gateway),
+    toolFace: buildDefaultToolFace(kv: InMemoryKv()),
     tokenProvider: () => null, // Binder 同签名零鉴权
   );
 

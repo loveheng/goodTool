@@ -3,18 +3,17 @@ library;
 /// goodhub 服务端模板 · 最小壳：装配端口 → MCP HTTP 起服 → 前台常驻。
 /// 新 app 起底三步：
 /// 1. 实现/替换 lib/ports.dart 的 SettingsKv（换真实存储）；
-/// 2. 写自己的 McpToolFace（参照 lib/tools/sample_tool_face.dart）+ 登记命令；
-/// 3. 在 main 里替换 SampleToolFace 与通知文案。
+/// 2. 写自己的领域网关（参照 lib/tools/*_tool.dart）+ 在 lib/tool_face_assembly.dart 登记；
+/// 3. 在 tool_face_assembly.dart 里替换/扩充工具面（HTTP 与 Binder 双通道共用）。
 /// 验收：`node tool/mcp-bridge/e2e-check.mjs`（token 见控制台日志）。
 import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
-import 'action/command_gateway.dart';
 import 'mcp/settings_kv.dart';
 import 'ports.dart';
 import 'service/foreground_task_init.dart';
 import 'service/mcp_controller.dart';
-import 'tools/sample_tool_face.dart';
+import 'tool_face_assembly.dart';
 
 void main() {
   runApp(const _TemplateApp());
@@ -56,13 +55,13 @@ class _BootPageState extends State<_BootPage> {
     // 1) 端口装配：KV 内存实现（真实 app 换 sqlite/文件实现）
     final SettingsKv kv = InMemoryKv();
 
-    // 2) 唯一写入口：登记本 app 的命令（示例一条，越权键按需登记）
-    final gateway = CommandGateway();
-
-    // 3) MCP 总控：token/开关走 KV，工具面工厂注入业务
+    // 2) MCP 总控：token/开关走 KV，工具面工厂注入业务。
+    //    工具面（math_utility / geo 领域网关）收口在 tool_face_assembly.dart，
+    //    与 Binder 生产通道共用同一份装配；当前能力全 R 档，故无写命令需登记
+    //    （W 档落地时在此登记 CommandGateway 并注入装配工厂）。
     final controller = McpController(
       kv: kv,
-      toolFaceFactory: () => SampleToolFace(gateway),
+      toolFaceFactory: () => buildDefaultToolFace(kv: kv),
     );
     await controller.regenerateToken();
 

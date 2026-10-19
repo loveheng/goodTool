@@ -16,8 +16,11 @@ Flutter（3.47.5 stable）写的 Android 常驻壳：前台服务保活 + 内嵌
 4. **R4 mcp/action 禁 import Flutter UI**（material/widgets）：无头系统硬约束，删 UI 全链路须可跑。
 5. **R5 UI 禁直连 Db.instance**：数据访问一律走 Repository。
 6. **R6 禁弃用 textScaleFactor**：M3 尺度走 `textTheme` + `textScaler`。
+7. **R7 tools 层禁绕过网关写门禁**：`lib/tools/**` 禁 `.dispatch(` / `.admits(`，写路径唯一通道 = `CategoryTool` 网关层（子操作只 `buildCommand`）；`Command` 类型依赖仍合法。
 
-> 本工程为无头 MCP 壳，已确认引入 `lib/ui` 用户层。arch-guard 已内置 R1~R5 扫描模式，随 `lib/ui` 建层即生效；R4（mcp/action 禁 import UI）+ R6（全 lib 禁 textScaleFactor）现已对 `lib` 全量生效。白名单是历史例外，只许减少不许增加。
+> 本工程为无头 MCP 壳，已确认引入 `lib/ui` 用户层。arch-guard 已内置 R1~R5 扫描模式，随 `lib/ui` 建层即生效；R4（mcp/action 禁 import UI）+ R6（全 lib 禁 textScaleFactor）+ R7（tools 禁绕过网关写门禁，随 S7 启用）现已生效。白名单是历史例外，只许减少不许增加。
+>
+> 装配纪律：工具面由 `lib/tool_face_assembly.dart` 单点收口，HTTP 调试通道（`main.dart`）与 Binder 生产通道（`mcp_binder_entrypoint.dart`）**共用同一份装配**——新增能力只改装配工厂，禁两通道各自装配。
 
 ## 编码前必读
 - 改前先查 `docs/project/index.md`（功能落点）与 `context/` 记忆；高风险模块改前检索 `context/lessons.md`。

@@ -4,7 +4,7 @@
 # toolbox-script
 # format: v1
 # name: arch-guard
-# summary: 架构硬约束机械校验（UI 禁直连 repo 写/UI 禁内联 JSON/UI 禁平台分支/UI 禁直连 Db/mcp+action 层禁 import flutter UI/禁弃用 textScaleFactor），改动 lib/ 后与发布前门禁
+# summary: 架构硬约束机械校验（UI 禁直连 repo 写/UI 禁内联 JSON/UI 禁平台分支/UI 禁直连 Db/mcp+action 层禁 import flutter UI/tools 层禁绕过网关写门禁/禁弃用 textScaleFactor），改动 lib/ 后与发布前门禁
 # trigger: manual
 # platform: unix
 # cat: test
@@ -25,7 +25,7 @@ HITS=""
 usage() {
   cat <<'EOF'
 用法: arch-guard.sh [选项]        （toolbox run arch-guard [选项] 等价）
-  默认: 扫描仓库 lib/ 下 6 条硬约束，逐条打印命中，0=通过 1=有违规
+  默认: 扫描仓库 lib/ 下 7 条硬约束，逐条打印命中，0=通过 1=有违规
 选项:
   --root <目录>  指定仓库根（默认 git 顶层 / 当前目录）
   --json         只输出一行 JSON 结论（供 AI/钩子判定，不打印明细）
@@ -98,12 +98,18 @@ scan_all() {
   scan_pattern "R6-textscale-deprecated" "lib" \
     "使用已弃用 textScaleFactor，须改 textScaler 并映射 M3 textTheme" \
     '(textScaleFactor:)' ""
+  # R7 领域网关写门禁（standards §3.3 G3）：tools 层（子操作/网关适配）禁自行
+  # dispatch/admits —— 写路径唯一物理通道 = CategoryTool 网关层；子操作只 buildCommand。
+  # （Command 类型依赖属合法「仅类型依赖」，不在本条扫描范围。）
+  scan_pattern "R7-tools-write-bypass" "lib/tools" \
+    "tools 层出现 .dispatch(/.admits(，写路径必须经 CategoryTool 网关层统一派发（§3.3 G3）" \
+    '\.(dispatch|admits)\(' ""
   return 0
 }
 
 report_text() {
   if [ "$COUNT" -eq 0 ]; then
-    echo "OK: 6 条架构硬约束全部通过（$ROOT）"
+    echo "OK: 7 条架构硬约束全部通过（$ROOT）"
     return 0
   fi
   printf '%b' "$HITS"
@@ -117,10 +123,10 @@ report_text() {
 report_json() {
   local msg remedy
   if [ "$COUNT" -eq 0 ]; then
-    printf '{"status":"OK","severity":"info","message":"arch-guard: 6 条架构硬约束全部通过"}\n'
+    printf '{"status":"OK","severity":"info","message":"arch-guard: 7 条架构硬约束全部通过"}\n'
     return 0
   fi
-  msg="arch-guard: $COUNT 处架构硬约束违规（R1 UI直连repo写 / R2 UI内联json / R3 UI平台分支 / R4 mcp+action import UI / R5 UI直连Db / R6 弃用textScaleFactor）"
+  msg="arch-guard: $COUNT 处架构硬约束违规（R1 UI直连repo写 / R2 UI内联json / R3 UI平台分支 / R4 mcp+action import UI / R5 UI直连Db / R6 弃用textScaleFactor / R7 tools绕过网关写门禁）"
   remedy="裸跑 toolbox run arch-guard 看逐条明细；对照 AGENTS.md 架构红线修正，历史遗留加白名单并注明原因"
   printf '{"status":"FAIL","severity":"error","message":"%s","remedy":"%s"}\n' "$msg" "$remedy"
   return 1
@@ -131,7 +137,7 @@ self_test() {
   bad=$(mktemp -d); clean=$(mktemp -d)
   trap 'rm -rf "$bad" "$clean"' RETURN
 
-  mkdir -p "$bad/lib/ui" "$bad/lib/mcp"
+  mkdir -p "$bad/lib/ui" "$bad/lib/mcp" "$bad/lib/tools"
   cat >"$bad/lib/ui/bad_page.dart" <<'EOF'
 await repo.addPlan(Plan(title: 'x'));
 final m = jsonDecode(s);
@@ -142,16 +148,24 @@ EOF
   cat >"$bad/lib/mcp/bad_tools.dart" <<'EOF'
 import 'package:flutter/material.dart';
 EOF
+  cat >"$bad/lib/tools/bad_sub.dart" <<'EOF'
+final r = await commandGateway.dispatch(cmd);
+if (!commandGateway.admits('calendar_marker_add', params)) {}
+EOF
 
-  mkdir -p "$clean/lib/ui"
+  mkdir -p "$clean/lib/ui" "$clean/lib/tools"
   cat >"$clean/lib/ui/ok_widget.dart" <<'EOF'
 final r = await handler.execute(const ConfirmBlockCommand(id: 'x'));
 final rows = await repo.blocksOnDate('2026-10-06');
 EOF
+  # 干净样本：W 档子操作只构造命令（类型依赖 Command 合法），派发交网关层
+  cat >"$clean/lib/tools/ok_sub.dart" <<'EOF'
+Command buildCommand(Map<String, Object?> params) => _MarkerAddCommand(params);
+EOF
 
   ROOT="$bad"; scan_all
-  if [ "$COUNT" -lt 6 ]; then
-    echo "SELF-TEST FAIL: 坏样本只抓到 $COUNT 处（期望 >=6）" >&2
+  if [ "$COUNT" -lt 7 ]; then
+    echo "SELF-TEST FAIL: 坏样本只抓到 $COUNT 处（期望 >=7）" >&2
     printf '%b' "$HITS" >&2
     return 2
   fi

@@ -25,7 +25,7 @@ updated: 2026-10-20
 | `service/` | 服务层（前台服务保活/HTTP 传输/MCP 控制） | `mcp`（装配）、`action` |
 | `tools/` | 工具面扩展（领域网关/子操作） | `mcp`（`tool_face`）、`action`（写门禁）、注入的 provider 端口 |
 | `update/` | 自更新（安装器/远程配置热更/清单/服务） | 独立叶子域，零内部出向 |
-| 装配件 `main.dart`/`mcp_binder_entrypoint.dart`/`ports.dart` | 装配入口 | 任意域，但只持装配职责，业务逻辑不得回灌 |
+| 装配件 `main.dart`/`mcp_binder_entrypoint.dart`/`ports.dart`/`tool_face_assembly.dart` | 装配入口 | 任意域，但只持装配职责，业务逻辑不得回灌 |
 
 ### 1.0 架构红线（arch-guard 口径）
 
@@ -39,8 +39,9 @@ updated: 2026-10-20
 | **R4** mcp/action 禁 import Flutter UI | `lib/mcp` `lib/action` | 禁 `import 'package:flutter/(material|widgets).dart'`，无头系统硬约束，删 UI 须可跑 | **可扫** |
 | **R5** UI 禁直连 Db | `lib/ui`（用户层·待建） | 数据访问一律走 Repository | lib/ui 落地即扫 |
 | **R6** 禁弃用 textScaleFactor | `lib` 全量 | 改 `textScaler` 并映射 M3 `textTheme` | **可扫**（全 lib） |
+| **R7** tools 层禁绕过网关写门禁 | `lib/tools` | 禁 `.dispatch(` / `.admits(`，写必经 `CategoryTool` 网关层统一派发与鉴权（§2.3 / §3.3 G3）；`Command` **类型依赖合法**（W 档 `buildCommand` 返回类型） | **可扫**（S7 起启用） |
 
-> 本工程为无头 MCP 壳，但已确认引入 `lib/ui` 用户层。arch-guard 已内置 R1~R5 扫描模式（作用域 `lib/ui`），`lib/ui` 建层后即自动覆盖；R4（mcp/action 禁 import UI）+ R6（禁 textScaleFactor）已对现有 `lib` 全量生效。白名单是历史例外，只减不增。
+> 本工程为无头 MCP 壳，但已确认引入 `lib/ui` 用户层。arch-guard 已内置 R1~R5 扫描模式（作用域 `lib/ui`），`lib/ui` 建层后即自动覆盖；R4（mcp/action 禁 import UI）+ R6（禁 textScaleFactor）已对现有 `lib` 全量生效；R7 随 S7 启用（`sample_tool_face.dart` 已退役，无需白名单）。白名单是历史例外，只减不增。
 
 ### 1.1 无头内核纪律（R4 的本质）
 
@@ -112,7 +113,9 @@ Flutter UI、前台服务、`McpServer` headless 监听严格**同单 OS 进程*
 
 ### 3.3 领域网关契约（分类嵌入模式）
 
-> 设计正文见 [`domain_gateway.md`](domain_gateway.md)（draft，未落地 `lib/`）；本节只写**机械约束**，是网关实现的准入红线。裁定记录见 `context/decisions.md` misc 节（2026-10-20）。
+> 设计正文见 [`domain_gateway.md`](domain_gateway.md)（契约层 S1–S2 与 `math_utility`(3) / `geo`(8) 已落地 `lib/`，`system_pim` / `weather` 待排期）；本节只写**机械约束**，是网关实现的准入红线。裁定记录见 `context/decisions.md` misc 节（2026-10-20）。
+>
+> **装配纪律（S7）**：各 `buildXxxTool()` 由 `lib/tool_face_assembly.dart` 单点收口成 1 个 `McpToolFace`，HTTP 调试通道与 Binder 生产通道**共用同一份装配**——新增能力只改装配工厂，禁止两通道各自装配（否则出现「HTTP 有、Binder 无」的能力漂移）。
 
 一个「业务域」= 1 个 MCP 工具，经 `action` 枚举 + 自由 `params` 对象完成精确调用。三层：`SubAction`（子操作契约）→ `CategoryTool`（领域网关，自动汇总生成 1 个 Tool）→ `CategoryToolFace`（总注册与派发，实现 `McpToolFace`）。
 
@@ -243,7 +246,8 @@ final result = sub.isWrite
 | 静态检查 | `flutter analyze` 0 issue 为交付线 | 提交前 |
 | 纯 Dart 内核全链路 | `flutter test`（test/smoke_test.dart + test/geo_test.dart，无设备可跑） | 提交前 |
 | 依赖环 / 跨域直连 | `arch-guard.sh` 扫描模式（lib/ui 落地即扫 R1~R5） | pre-commit |
-| 网关写门禁（`lib/tools/**` 禁 `.dispatch(`、禁 `import command_gateway.dart`，写必经网关层 `admits`） | `arch-guard.sh`（扫描模式待 `lib/tools/*_tool.dart` 落地后启用；启用前 `sample_tool_face.dart` 须退役或走白名单审批） | pre-commit |
+| 网关写门禁（`lib/tools/**` 禁 dispatch / admits 调用，写必经 `CategoryTool` 网关层统一派发与鉴权） | `arch-guard.sh` **R7**（S7 起启用；`sample_tool_face.dart` 已退役，零白名单） | pre-commit |
+| 装配单点收口（HTTP 与 Binder 双通道共用同一工具面） | `lib/tool_face_assembly.dart`（新增能力只改本文件）+ `flutter test`（`test/tool_face_assembly_test.dart` 断言工具数 = 域数） | 提交前 |
 | 网关派发契约（枚举外 `action` → `UNKNOWN_ACTION`；未授权写 → `PERMISSION_DENIED`；`isError ⇔ !success`） | `flutter test`（`test/`，Mock Provider 走通闭环） | 提交前 |
 
 > 架构债与白名单基线见 [`index.md`](index.md)；R1/R2/R3/R5 待 lib/ui 引入时补机械镜像（只减不增）。

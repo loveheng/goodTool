@@ -146,7 +146,7 @@ void main() {
       accuracy: 2,
     )),
     http,
-    amapWebKey: 'TESTKEY',
+    webKeyReader: () async => 'TESTKEY',
   );
 
   Future<Map<String, Object?>> run(
@@ -489,8 +489,8 @@ void main() {
       final signed = buildGeoTool(
         _MockSensor(),
         http,
-        amapWebKey: 'TESTKEY',
-        amapSecret: 'SECRET',
+        webKeyReader: () async => 'TESTKEY',
+        secretReader: () async => 'SECRET',
       );
       final j = _parse(await signed.call('geo_static_map', {
         'center': {'lat': 39.9042, 'lng': 116.4074},

@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-10-19
+updated: 2026-10-20
 ---
 
 # goodTools · 产品概述
@@ -61,7 +61,7 @@ flowchart TD
 ## 实现基线（现状）
 
 - MCP 内核纯 Dart，可脱离 Flutter 在 `test/smoke_test.dart` 全链路验证。
-- 模板随附 `SampleToolFace`（演示 `ping` + 写命令 `note_put`，示范唯一写入口）与 `NullWeatherProvider`（天气端口的空实现，注入真实源即生效）。四大真实能力按 `McpToolFace` 模板落地即上工。
+- 工具面经 `lib/tool_face_assembly.dart` 装配收口（HTTP 调试通道与 Binder 生产通道共用同一份），已上线 `math_utility`（3 action）与 `geo`（8 action，经 `AmapHttpProvider` 出网）；`NullWeatherProvider`（天气端口空实现，注入真实源即生效）待 weather 域落地。剩余能力按领域网关模式（`lib/tools/*_tool.dart`）落地即上工。
 - UI 层尚未构建（无 `lib/ui`）；引入 UI 后 arch-guard 将完整启用 R1–R6 扫描。
 
 ## 相关文档

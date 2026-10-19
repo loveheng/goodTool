@@ -3,7 +3,7 @@
 //
 // 可见性（§3.3 G2）：仅公开 buildMathTool()；具体子操作 _CalcEvalSub / _UnitConvertSub
 // / _UnitListSub 以 `_` 前缀私有。本文件**不 import command_gateway.dart**、
-// 不出现 .dispatch(/.admits( —— math 全 R 档，物理上不触达写门禁（arch-guard 红线）。
+// 不出现 dispatch / admits 调用 —— math 全 R 档，物理上不触达写门禁（arch-guard 红线）。
 library;
 
 import 'dart:convert';

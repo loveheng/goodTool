@@ -3,7 +3,7 @@
 //
 // 可见性（§3.3 G2）：仅公开 buildGeoTool()；具体子操作以 `_GeoXxxSub` 私有于本文件。
 // 依赖性（arch-guard R1/R4）：geo.md「档位：均为 R」⇒ 全 R 档 —— 本文件不 import
-// command_gateway.dart、不出现 `.dispatch(` / `.admits(`；所有 IO 经 LocationSensorProvider
+// command_gateway.dart、不出现 dispatch / admits 调用；所有 IO 经 LocationSensorProvider
 // / GeoHttpProvider 注入，无 dart:io / Flutter UI，删 UI 亦可跑。
 // GeoHttpProvider 内部 key 由实现从设置注入；唯 v3/staticmap 需拼 URL 而非发 JSON 请求，
 // 故 web key/secret 以**静态配置**随 buildGeoTool 注入（不给 LLM 露出 key 入参）。
@@ -25,12 +25,16 @@ const Set<String> _routeModes = {'driving', 'walking', 'bicycling', 'transit'};
 /// ——[CategoryTool.call] 仅 W 档才触达网关，R 档物理不可穿透（fail-closed）。
 ///
 /// [sensor] 设备定位/磁力计端口；[http] 高德 Web 服务端口；
-/// [amapWebKey]/[amapSecret] 静态图 URL 拼装所需配置（成像签名用，无则不出图）。
+/// [webKeyReader]/[secretReader] 静态图 URL 拼装所需配置（成像签名用，无则不出图）——
+/// **同步构造器 + 异步懒读**：装配面（`main.dart` / `mcp_binder_entrypoint.dart`）是
+/// 同步的，而 KV 读配置是异步的，故把读取推到子操作执行时；副作用是用户在设置里
+/// 补填 Key 后**无需重建工具面**即生效（与 [AmapHttpProvider] 同范式）。
+/// 两个 reader 缺省（null）⇒ 静态图返回 `ERR_AMAP_KEY_MISSING`（fail-closed）。
 CategoryTool buildGeoTool(
   LocationSensorProvider sensor,
   GeoHttpProvider http, {
-  String amapWebKey = '',
-  String? amapSecret,
+  Future<String?> Function()? webKeyReader,
+  Future<String?> Function()? secretReader,
 }) {
   final cat = CategoryTool(
     'geo',
@@ -45,7 +49,7 @@ CategoryTool buildGeoTool(
   cat.register(_GeoReverseSub(http));
   cat.register(_GeoSearchPoiSub(http));
   cat.register(_GeoRouteSub(http));
-  cat.register(_GeoStaticMapSub(amapWebKey, amapSecret));
+  cat.register(_GeoStaticMapSub(webKeyReader, secretReader));
   return cat;
 }
 
@@ -596,13 +600,13 @@ Map<String, Object?> _parseRouteBody(Map<String, Object?> body) {
 // ---------------------------------------------------------------------------
 
 class _GeoStaticMapSub extends SubAction {
-  _GeoStaticMapSub(this._webKey, this._fallbackSecret);
+  _GeoStaticMapSub(this._webKeyReader, this._secretReader);
 
-  /// 静态图所需的 Web 服务 Key（**配置注入，不给 LLM 露出入参**）。
-  final String _webKey;
+  /// 静态图所需的 Web 服务 Key（**配置懒读，不给 LLM 露出入参**）。
+  final Future<String?> Function()? _webKeyReader;
 
   /// 设置里的数字签名密钥；单次调用可用 params.secret 覆盖。
-  final String? _fallbackSecret;
+  final Future<String?> Function()? _secretReader;
 
   @override
   String get name => 'geo_static_map';
@@ -623,11 +627,13 @@ class _GeoStaticMapSub extends SubAction {
 
   @override
   Future<SubActionResult> execute(Map<String, Object?> params) async {
-    if (_webKey.trim().isEmpty) {
-      // 不同于其它 geo 动作：URL 拼装不经过 GeoHttpProvider，故 Key 缺失须在此显式拦。
+    // 不同于其它 geo 动作：URL 拼装不经过 GeoHttpProvider，故 Key 缺失须在此显式拦。
+    final webKey = (await _webKeyReader?.call())?.trim() ?? '';
+    if (webKey.isEmpty) {
       return _err('ERR_AMAP_KEY_MISSING',
           '高德 Web 服务 Key 未配置（静态图出图需 amap_web_key）');
     }
+    final fallbackSecret = await _secretReader?.call();
     final zoom = parseInt(params['zoom']);
     final size = _parseSize(params['size']);
     final markers = _parseMarkers(params['markers']);
@@ -636,11 +642,11 @@ class _GeoStaticMapSub extends SubAction {
     final bounds = _parseBounds(params['bounds']);
     final secret = params['secret'] is String
         ? params['secret'] as String
-        : _fallbackSecret;
+        : fallbackSecret;
     final coordSystem = _systemOf(params['coordSystem']);
 
     final url = AmapStaticMap.buildUrl(
-      key: _webKey,
+      key: webKey,
       center: _parsePoint(params['center']),
       zoom: zoom,
       size: size,

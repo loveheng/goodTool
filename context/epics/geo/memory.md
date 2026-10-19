@@ -20,5 +20,5 @@ last-merge: none
 - **已知限制（非 S4 范围，已登记域内待办）**：`geo_route` 的 `mode=transit` 缺 `city` 时按 geo.md 本应「由起点自动逆地理推导」，当前实现返回 `MISSING_ARGUMENT` 并在 message 中给出自愈指引（先 `geo_reverse` 取 city），其余 7 个 action 端到端不受影响；自动推导留给后续排期。
 
 ## 断点
-- [断点] S4 适配层已完成，**尚未注册进 MCP 线级**：`buildGeoTool()` 现无生产调用方，注册进 `McpController.toolFaceFactory` 并注入真实 Provider 属共享 epic（S7）收口（与 `buildMathTool()` 同批），本 epic 不触碰 `mcp_controller.dart` / `main.dart`。
-- [断点] 下一步：等待新子任务。若继续网关主线 → 切 `CURRENT` 回 `domain_gateway` 做 S7（含 index.md 回填）；若做剩余能力域 → weather / calendar。
+- [断点] **S7 已完成接线**：`buildGeoTool()` 由 `lib/tool_face_assembly.dart`（装配件）装配进 MCP 线级，HTTP 调试通道与 Binder 生产通道共用同一份；注入 `AmapHttpProvider`（真实高德 REST，Key 经 KV 懒读）与 `NullLocationSensorProvider`（真实定位需 geolocator，S7 未引入，fail-closed 返回 `PERMISSION_DENIED`）。S7 同轮把 `amapWebKey`/`amapSecret` 静态参数改为懒读 reader，故本 epic 的 `buildGeoTool` 构造签名有变。
+- [断点] 下一步：等待新子任务。本域剩余项 = `geo_route` mode=transit 的 city 自动逆推（见本域 todos）；跨域主线 = domain_gateway 的 S8 与 system_pim / weather 域排期。
