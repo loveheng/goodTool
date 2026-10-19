@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:good_template/mcp/geo_provider.dart';
 import 'package:good_template/mcp/settings_kv.dart';
 import 'package:good_template/mcp/tool_face.dart';
+import 'package:good_template/mcp/weather_provider.dart';
 import 'package:good_template/ports.dart';
 import 'package:good_template/tool_face_assembly.dart';
 
@@ -37,19 +38,16 @@ void main() {
   }
 
   group('能力面（tools/list 收敛到域数）', () {
-    test('只暴露 2 个领域工具：math_utility + geo', () {
+    test('只暴露 3 个领域工具：math_utility + geo + weather', () {
       final names = face().schemas().map((s) => s['name']).toList();
-      expect(names, ['math_utility', 'geo']);
+      expect(names, ['math_utility', 'geo', 'weather']);
     });
 
-    test('action 合计 11 项（math 3 + geo 8），与能力文档 1:1', () {
+    test('action 合计 12 项（math 3 + geo 8 + weather 1），与能力文档 1:1', () {
       expect(actionsOf('math_utility'),
           ['calc_eval', 'unit_convert', 'unit_list']);
       expect(actionsOf('geo').length, 8);
-      expect(
-        face().schemas().fold<int>(0, (n, _) => n + 1),
-        2,
-      );
+      expect(actionsOf('weather'), ['weather_forecast']);
     });
 
     test('每个 action 描述带紧凑参数签名（消参数盲盒）', () {
@@ -90,7 +88,14 @@ void main() {
         kv: kv,
         sensor: _SensorStub(),
         http: _HttpStub(),
+        weather: _WeatherStub(),
       );
+      final w = await f.call('weather', {
+        'action': 'weather_forecast',
+        'params': {'city': '朝阳'},
+      });
+      expect(w['isError'], isFalse);
+      expect(jsonOf(w)['city'], '北京市 朝阳区');
       final r = await f.call('geo', {
         'action': 'geo_current',
         'params': {},
@@ -120,6 +125,18 @@ void main() {
         'params': {'address': '北京市朝阳区'},
       });
       expect(r['isError'], isFalse);
+    });
+
+    test('未配和风 Key → ERR_WEATHER_KEY_MISSING（fail-closed，不静默 null）',
+        () async {
+      final r = await face().call('weather', {
+        'action': 'weather_forecast',
+        'params': {'city': '北京'},
+      });
+      expect(r['isError'], isTrue);
+      final code = (jsonOf(r)['error'] as Map)['code'] as String;
+      expect(code, startsWith('weather.weather_forecast:'));
+      expect(code, contains('ERR_WEATHER_KEY_MISSING'));
     });
 
     test('未注入定位实现 → PERMISSION_DENIED（不伪造坐标）', () async {
@@ -170,6 +187,21 @@ class _SensorStub implements LocationSensorProvider {
   Future<CompassReading?> compass() async => const CompassReading(
         heading: 0,
         accuracy: 1,
+      );
+}
+
+/// 天气桩：回放固定成功信封（验证装配面把 Provider 注入到 weather 分类）。
+class _WeatherStub implements WeatherProvider {
+  @override
+  Future<WeatherResult> forecast({
+    String? city,
+    double? lat,
+    double? lng,
+    int days = 3,
+  }) async =>
+      const WeatherResult.success(
+        city: '北京市 朝阳区',
+        locationId: '101010100',
       );
 }
 

@@ -23,7 +23,7 @@ goodTools 是面向**外部 MCP 客户端（Agent）**的**「生活时空基座
 | 计算器（life_math） | 表达式求值、比例/单位换算等数值计算 | 一个求值工具，返回结果 + 中间态 |
 | 日历（calendar） | 读取系统日历日程，供查询/排程 | 按日/区间查询事件，敏感字段可按策略过滤 |
 | 地理信息（geo，含指南针） | 当前经纬度、GCJ-02 火星坐标、行政区名、两点测距、指南针方位 | 坐标读取、测距、方位查询 |
-| 天气（weather） | 城市维度的三日结构化预报 | 经可注入的 `WeatherProvider` 端口取数 |
+| 天气（weather） | 实时天气 + 1~7 天结构化预报 + 气象灾害预警 | 经可注入的 `WeatherProvider` 端口取数（真实源 `QWeatherProvider` 落 `lib/service/weather.dart`） |
 
 四大能力经统一的 `McpToolFace` 端口注册（见 `lib/mcp/tool_face.dart`），新能力照此模板扩展，内核不感知具体业务。
 
@@ -61,7 +61,8 @@ flowchart TD
 ## 实现基线（现状）
 
 - MCP 内核纯 Dart，可脱离 Flutter 在 `test/smoke_test.dart` 全链路验证。
-- 工具面经 `lib/tool_face_assembly.dart` 装配收口（HTTP 调试通道与 Binder 生产通道共用同一份），已上线 `math_utility`（3 action）与 `geo`（8 action，经 `AmapHttpProvider` 出网）；`NullWeatherProvider`（天气端口空实现，注入真实源即生效）待 weather 域落地。剩余能力按领域网关模式（`lib/tools/*_tool.dart`）落地即上工。
+- 工具面经 `lib/tool_face_assembly.dart` 装配收口（HTTP 调试通道与 Binder 生产通道共用同一份），已上线 `math_utility`（3 action）、`geo`（8 action，经 `AmapHttpProvider` 出网）、`weather`（1 action，经 `QWeatherProvider` 出网）——合计 3 域 12 action。剩余能力（日历 `system_pim` 14 action）按领域网关模式（`lib/tools/*_tool.dart`）落地即上工。
+- 未配置后端 Key 时能力**不静默降级**：高德动作回 `ERR_AMAP_KEY_MISSING`、和风动作回 `ERR_WEATHER_KEY_MISSING`，均带 `suggestion` 指引用户在设置页配置（standards §1.2 fail-closed）。
 - UI 层尚未构建（无 `lib/ui`）；引入 UI 后 arch-guard 将完整启用 R1–R6 扫描。
 
 ## 相关文档

@@ -14,9 +14,12 @@ import 'mcp/category_tool_face.dart';
 import 'mcp/geo_provider.dart';
 import 'mcp/settings_kv.dart';
 import 'mcp/tool_face.dart';
+import 'mcp/weather_provider.dart';
 import 'service/amap_http_provider.dart';
+import 'service/weather.dart';
 import 'tools/geo_tool.dart';
 import 'tools/math/math_tool.dart';
+import 'tools/weather_tool.dart';
 
 /// app_settings 内部键：高德 Web 服务 Key。
 ///
@@ -27,21 +30,26 @@ const String kAmapWebKey = 'amap_web_key';
 /// app_settings 内部键：高德静态图数字签名密钥（可选，防 `INVALID_USER_SCODE`）。
 const String kAmapSecret = 'amap_secret';
 
-/// 装配本 app 的 MCP 工具面：[kv] 供高德 Key 懒读；[sensor]/[http] 可注入桩（单测）。
+/// 装配本 app 的 MCP 工具面：[kv] 供各后端 Key 懒读；[sensor]/[http]/[weather]
+/// 可注入桩（单测）。
 ///
-/// 现状能力面：`math_utility`（3 action，纯 Dart 零依赖）+ `geo`（8 action，
-/// 经 [AmapHttpProvider] 出网）。二者**全 R 档**，故分类的写门禁端口传 null——
-/// W 档子操作物理不可达（fail-closed，见 `CategoryTool.call`）。
+/// 现状能力面：`math_utility`（3 action，纯 Dart 零依赖）、`geo`（8 action，
+/// 经 [AmapHttpProvider] 出网）、`weather`（1 action，经 [QWeatherProvider] 出网）。
+/// 三者**全 R 档**，故分类的写门禁端口传 null——W 档子操作物理不可达
+/// （fail-closed，见 `CategoryTool.call`）。
 McpToolFace buildDefaultToolFace({
   required SettingsKv kv,
   LocationSensorProvider? sensor,
   GeoHttpProvider? http,
+  WeatherProvider? weather,
 }) {
   // 定位/磁力计：真实平台实现（geolocator + 权限流）尚未接入，缺省走 Null 实现——
   // 它是 **fail-closed** 而非兜底：`geo_current` / `geo_compass` 返回
-  // `PERMISSION_DENIED` 机器码并引导用户授权，不返回伪造坐标（standards §1.2）。
+  // `PERMISSION_DENIED` 机器码并引导用户授权，不返回伪造坐标（standards §1.2）；
+  // 天气回退链第 4 级同样止步于此，最终回 `ERR_LOCATION_UNAVAILABLE`。
   final sensors = sensor ?? const NullLocationSensorProvider();
   final amap = http ?? AmapHttpProvider(() => kv.settingsGet(kAmapWebKey));
+  final wx = weather ?? QWeatherProvider(kv, sensor: sensors);
 
   return CategoryToolFace(<CategoryTool>[
     buildMathTool(),
@@ -51,5 +59,6 @@ McpToolFace buildDefaultToolFace({
       webKeyReader: () => kv.settingsGet(kAmapWebKey),
       secretReader: () => kv.settingsGet(kAmapSecret),
     ),
+    buildWeatherTool(wx),
   ]);
 }
