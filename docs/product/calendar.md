@@ -215,3 +215,16 @@ Marker {
 
 - 产品概述：[overview.md](overview.md)
 - UI 开发规范：[../project/ui-design.md](../project/ui-design.md)
+
+## 决策日志
+- [2026-10-20] [决策]: **节假日表绝不编造**——国务院年度安排凭记忆填充会造成错误的「今天放假/补班」判断（比不判断更糟），故默认 `EmptyHolidayProvider`（version `empty-0`）且出参回写 `holidayTableVersion` 让 Agent 可知判断依据；真实表待官方数据导入（P2-①）。
+- [2026-10-20] [决策]: **跨度算法用逐月推进而非月份相减借位**——借位法在 `1/31 → 3/1` 上会算出负数天内差（借的是 end 所在上月的天数）。改为从 start 逐整月推进（先年后月）直至再进一月即超过 end，残余即天数。
+- [2026-10-20] [决策]: **校验职责下沉 Actor**——必填与 SSRF 校验在命令执行器（service 层）内做：`buildCommand` 无法返回 `SubActionResult`，在工具层抛异常会被内核兜成散文错误，破坏结构化错误口径。
+- [2026-10-20] [决策]: **本轮不装配进 `tool_face_assembly`**——6 个 R 档的 ICS/农历/时区源与 5 个 W 档的 Actor 均未落地，接线等于线级摆 14 个恒失败工具（与 S5「能力不假上线」同一纪律）。待 P2 源就绪后一并装配，届时线级 = 4 域 26 action，与 `domain_gateway.md` 矩阵闭环。
+- [2026-10-20] [决策]: **SubAction 增 `validate` 前置校验钩子（G6）**——`buildCommand` 只能返回 `Command`、无法表达失败，必填/护栏/幂等这类可预期失败此前只能抛异常，被内核兜成散文错误、破坏 D3 结构化错误口径。拦截顺序固定 `admits → validate → dispatch`（未授权会话不触达入参校验，不泄露可枚举信息）。已同步 coding-standards §3.3 G6。
+- [2026-10-20] [决策]: **SSRF 护栏从 `lib/tools/calendar/url_guard.dart` 上移到 `lib/mcp/calendar_provider.dart`**——Actor（service 层）也要复检，而 standards §1 里 `service` 出向只含 `mcp`/`action`，不得 import `tools`；放内核两侧复用。
+- [2026-10-20] [决策]: **Actor 输出统一为 `{'success':…}` 信封，isError 由信封派生**（`SubActionResult.fromActor`）。没有这一步，业务失败（URL 被护栏拒绝等）在 MCP 顶层仍是 `isError:false`，客户端误判成功、Agent 基于失败结果继续推理。
+- [2026-10-20] [决策]: **ICS 解析器与 PII 脱敏住内核（lib/mcp）而非 tools**——service 层 Actor/Provider 也要复用，而 standards §1 里 `service` 出向只含 `mcp`/`action`，不得 import `tools`（与 SSRF 护栏上移同一理由）。
+- [2026-10-20] [决策]: 装配默认用内存标记 store 而非 SharedPrefs——装配函数是**同步**的（`SharedPreferences.getInstance()` 是异步），持久化 store 需调用方异步打开后注入（参数已留）。语义可接受：Binder isolate 本就每次拉起重建、HTTP 侧随 app 生命周期；真实持久化替换时注入即可，无装配面改动。
+- [2026-10-20] [决策]: **strictLeap / followRegular 的闰月语义在内核 expand 层完整实现，但 marker_add 入参面暂不放行「闰」格式**——calendar.md 只定义了 `YYYY-MM-DD` 农历格式（无闰月位），扩 W 档 validate 正则会连带改 Actor 与 P2-⑤ 测试面；当前经工具面创建的闰月标记不存在，三策略语义以直接构造 `CalendarMarker` 的单测钉死（`2025-闰6-05` 源）。入参面扩展列为断点候选，不静默假装支持。
+- [2026-10-20] [决策]: **resolve_date 的相对表达式与不带年份的别名必须显式传 baseDate**——F1 禁 `DateTime.now()`，B1 链只提供时区回退不提供「今天」，显式报 MISSING_ARGUMENT + suggestion（可改用 `mid_autumn:2027` 带年份格式）是唯一确定解释。已知别名先认名再问基准：未知别名直接 INVALID_ARGUMENT，不落「缺 baseDate」误报（单测抓到的首版顺序 bug）。

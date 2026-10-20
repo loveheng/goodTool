@@ -2,8 +2,8 @@
 dev-loop: memory
 format: v1
 epic: calendar
-total-merged: 0
-last-merge: none
+total-merged: 1
+last-merge: 2026-10-20
 ---
 
 # calendar
@@ -38,12 +38,16 @@ last-merge: none
 
 - 2026-10-20 **S6-P2-⑥ 标记推演落地（16 项单测；flutter test 353 全绿）**：`marker_list` / `month_grid` 两个 R 档真实化（公历语义）。新增 `lib/tools/calendar/marker_math.dart`。
 - **关键语义（已用测试钉死）**：① `daysRemaining` 以 **rangeStart** 为基准日而非系统当天（F1 禁 DateTime.now()）；② 平年 02-29 → 02-28 且标 `approximate`（不推到 3 月）；③ **农历标记不出 `date`**，只标 `lunarPending`——静默按公历算会把「农历八月十五」错算约一个月；④ 月网格 `lunar` 字段**直接不出**（出 null 会让 UI 误判「无农历」而非「未实现」）。
-- **剩余不可用（显式 fail-closed，非假上线）**：`calendar_resolve_date` 与 `calendar_tz_convert` —— 分别待 P2-③（农历库）与 P2-②（package:timezone），**两个依赖均等用户批准**。其余 12 个 action 已真实可用。
+- **本轮口径**：`calendar_resolve_date` 与 `calendar_tz_convert` 当时为显式 fail-closed（待农历库与 `package:timezone`），两依赖获批后已由 P2-② / P2-③ 落地（见下方进度），不再是缺口。
 
 - 2026-10-20 **S6-P2-⑧ 装配上线（flutter test 356 全绿）**：线级能力面 = **4 域 26 action**，与 `domain_gateway.md` 能力矩阵闭环。`buildDefaultToolFace` 收口 4 域 + 日历 Actor 登记；HTTP 调试通道与 Binder 生产通道同步生效。
 - **重要架构事实**：这是 `CommandGateway`（唯一写入口）**首次有真实写命令在生产路径上被用**——5 个日历 W 档经 `admits → validate → dispatch → Actor` 闭环，arch-guard R7 从「扫描模式」变成「真门禁」。
 - **装配默认用内存标记 store**：装配函数同步，而 SharedPreferences 打开是异步；持久化 store 由调用方异步打开后经参数注入（Binder isolate 每次拉起重建，语义可接受）。
 
+## 决策与踩坑指针
+
+- 决策（11 条原文归档）：`docs/product/calendar.md` ## 决策日志 —— 节假日表绝不编造、跨度用逐月推进、校验下沉 Actor、SSRF 护栏上移内核、Actor 信封派生 isError、ICS 解析器住内核、闰月入参面暂不放行、相对表达式须显式 baseDate 等。
+- 踩坑（7 条，通用可复用）：`context/lessons.md` §calendar —— ICS 禁 `toUtc()`、失败信封须走 `structuredError`、跨度逐月推进、`BYMONTHDAY` 按 FREQ 分流、农历库约定读源码钉死、null-aware 对 false 仍出字段、合并层禁 `addAll` 不可变列表。
+
 ## 断点
-- [断点] **尚未装配进 `tool_face_assembly.dart`**——6 个 R 档依赖的源（ICS / 农历 / 时区）与 5 个 W 档的 Actor 均未落地，此时接线等于线级摆 14 个恒失败的工具（与 S5「不假上线」同一纪律）。P2 源就绪后一并装配。
-- [断点] 下一步（P2，按依赖顺序）：① **官方节假日表**导入（本地 bundle + 静态 JSON OTA，F3）；② `package:timezone` 引入（需用户确认新依赖）→ `tz_convert` + B1/B2/B3 时区归一；③ 纯 Dart 农历库引入（需用户确认）→ `resolve_date` / `month_grid` / `isLunar` 标记推演；④ ICS 解析与 RRULE 展开 + `CalendarFeedProvider` 真实源（service 层，含 SSRF 护栏调用、3 跳重定向、10s 超时缓存回退）；⑤ 5 个 W 档命令的 **Actor** 实现与 `CommandGateway` 登记；⑥ 标记存储与脱敏（E 拍板）；⑦ 系统日历读取（Android 权限 + 平台通道）；⑧ 全部就绪后装配 + index.md 锚点。
+- [断点] **calendar 域 P1+P2-①~⑧ 全部落地**（2026-10-20）：线级 4 域 26 action **全部真实可用（26/26）**；系统日历源经 `SystemCalendarPort` → `MethodChannelSystemCalendarPort` → Kotlin `SystemCalendarChannel.kt` 收口，ICS + system 合并走 `CompositeCalendarProvider`（子源失败显式 warnings）。残留两项（运行时权限申请 UI 入口、隐私设置「日程敏感字段过滤」开关）**已迁至 `ui-console` epic 域内待办**——本域能力面无待办，等待新子任务。

@@ -15,4 +15,5 @@ updated: 2026-10-20
   - 天气能力（和风天气 API）→ [product/weather.md](product/weather.md)
 - **project/**：工程规范 SSOT → [project/coding-standards.md](project/coding-standards.md)；UI 设计规范（工业控制台范式 + arch-guard 红线）→ [project/ui-design.md](project/ui-design.md)
   - 功能 → 代码落点索引（域级锚点表）→ [project/index.md](project/index.md)
-  - 领域网关工具（分类嵌入模式设计，draft；矩阵已 1:1 对账）→ [project/domain_gateway.md](project/domain_gateway.md)
+  - 领域网关工具（分类嵌入模式落地基线，26 action 全可用）→ [project/domain_gateway.md](project/domain_gateway.md)
+  - 控制台 UI 落地设计（人前端：页面规格 + 接缝 + 用户命令族）→ [project/ui-console.md](project/ui-console.md)

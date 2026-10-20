@@ -1,11 +1,11 @@
 ---
-status: draft
+status: active
 updated: 2026-10-20
 ---
 
 # goodTools · 领域网关工具（Domain Gateway Tool）设计 — 分类嵌入模式
 
-> 状态：`draft`。本文是对「把零散能力聚合为少量领域工具」方案的评估与设计基线。**落地进度（P2-⑧ 后）**：契约层 S1–S2 + 四域全部装配（`math_utility` 3 / `geo` 8 / `weather` 1 / `system_pim` 14，共 **26 action**，24 个已可用）并经 `lib/tool_face_assembly.dart` 进入 HTTP 与 Binder 双通道；`CommandGateway` 写门禁随 5 个日历 W 档首次在生产路径闭环（arch-guard R7 从扫描模式变真门禁）。未落地 2 个 action（`calendar_resolve_date` / `calendar_tz_convert`）为显式 fail-closed，待农历引擎与 `package:timezone` 引入。代码落点以 `docs/project/index.md` 的域级锚点为唯一事实源。
+> 状态：`active`。本文是「把零散能力聚合为少量领域工具」方案的**落地基线**。契约层 S1–S2 + 四域全部装配（`math_utility` 3 / `geo` 8 / `weather` 1 / `system_pim` 14，共 **26 action，26 个全部真实可用**）并经 `lib/tool_face_assembly.dart` 进入 HTTP 与 Binder 双通道；`CommandGateway` 写门禁随 5 个日历 W 档在生产路径闭环（arch-guard R7 为真门禁）。代码落点以 `docs/project/index.md` 的域级锚点为唯一事实源。
 
 ## 背景与动机
 

@@ -22,8 +22,11 @@ updated: 2026-10-20
 | `mcp/` | MCP 内核（JSON-RPC/传输/server/工具面接口/KV/示例工具） | 纯 Dart 件可直接用；经端口引 `geo`/`service` 的接口定义（依赖倒置） |
 | `action/` | 命令层（CommandGateway 唯一写入口） | `mcp`（接口）；可 import 业务域执行体 |
 | `geo/` | 地理/地图内核（坐标纠偏/测距/静态图 URL/签名/抽稀/HTTP 端口） | 纯 Dart，零 Flutter 依赖；可 import 自身 |
-| `service/` | 服务层（前台服务保活/HTTP 传输/MCP 控制） | `mcp`（装配）、`action` |
+| `service/` | 服务层（前台服务保活/HTTP 传输/MCP 控制） | `mcp`（装配）、`action`、`repository`（写后回读最新快照） |
 | `tools/` | 工具面扩展（领域网关/子操作） | `mcp`（`tool_face`）、`action`（写门禁）、注入的 provider 端口 |
+| `repository/` | 读聚合层（R5 落点：设置 / 标记的**类型化**读） | `mcp`（`SettingsKv` 与端口模型）、`action`（快照类型）；**不持写端口** |
+| `ui_ports/` | UI 适配层（纯 Dart：类型化视图模型 + 内核调用收口） | 内核（`tools`/`geo`/`mcp` 端口）、`repository`、`action`；**禁** import Flutter |
+| `ui/` | 用户层（Flutter 控件：仪表盘 / 沙盒 / 设置） | `ui_ports`、Flutter material；**禁** import `mcp` 传输类型 / `tools` 内部子类 |
 | `update/` | 自更新（安装器/远程配置热更/清单/服务） | 独立叶子域，零内部出向 |
 | 装配件 `main.dart`/`mcp_binder_entrypoint.dart`/`ports.dart`/`tool_face_assembly.dart` | 装配入口 | 任意域，但只持装配职责，业务逻辑不得回灌 |
 
@@ -42,6 +45,8 @@ updated: 2026-10-20
 | **R7** tools 层禁绕过网关写门禁 | `lib/tools` | 禁 `.dispatch(` / `.admits(`，写必经 `CategoryTool` 网关层统一派发与鉴权（§2.3 / §3.3 G3）；`Command` **类型依赖合法**（W 档 `buildCommand` 返回类型） | **可扫**（S7 起启用） |
 
 > 本工程为无头 MCP 壳，但已确认引入 `lib/ui` 用户层。arch-guard 已内置 R1~R5 扫描模式（作用域 `lib/ui`），`lib/ui` 建层后即自动覆盖；R4（mcp/action 禁 import UI）+ R6（禁 textScaleFactor）已对现有 `lib` 全量生效；R7 随 S7 启用（`sample_tool_face.dart` 已退役，无需白名单）。白名单是历史例外，只减不增。
+>
+> **2026-10-20：`lib/ui` 已落地**——R1/R2/R3/R5 的机械扫描**首次真正生效**（此前 `lib/ui` 目录不存在，扫描无对象）。已用反向探针验证：注入 `jsonDecode` / `Platform.isAndroid` 的临时文件，arch-guard 逐条报出违规行号并拦截，删除后复跑恢复全绿。
 
 ### 1.1 无头内核纪律（R4 的本质）
 
