@@ -32,6 +32,10 @@ last-merge: none
   4. **SSRF 护栏上移内核**（`lib/mcp/calendar_provider.dart`）：Actor（service 层）要复检，而 service 出向不含 `tools`；放内核两侧复用。
   5. **写/读端口分离**：`CalendarMarkerStore` 只读给工具层，`CalendarMarkerWriter` 只给 Actor 持有，物理上防止写路径绕过 CommandGateway。
 
+- 2026-10-20 **S6-P2-④ ICS 解析与真实源落地（27 项新单测；flutter test 337 全绿）**：`calendar_query` / `calendar_feeds` / `calendar_refresh` 三个 R/W 档**真实可用**（在线 ICS）。新增 `lib/mcp/ics_parser.dart`（RFC 5545 子集 + RRULE 展开 + C1 365 实例截断 + C2 EXDATE/override/CANCELLED）、`lib/service/ics_feed_provider.dart`（gzip/3 跳重定向/10s 超时回退、G2 频控 30s、G3 退订清缓存、G4 复合键）、`lib/mcp/pii_mask.dart`（E 拍板 PII 脱敏，默认只掩码电话/邮箱）。
+- **关键踩坑（均已入 devlog）**：① ICS 时间解析**禁用 `DateTime(...).toUtc()`**（墙钟按本机时区偏移，全部实例漂一天），改 `DateTime.utc` 直接构造；② BYMONTHDAY 必须按 FREQ 分流（首版让 DAILY 每月只触发一天）；③ 无 31 日的月份按 RFC 不触发，不 clamp 伪造日期。
+- **决策**：ICS 解析器与 PII 脱敏**住内核**（`lib/mcp`）——service 层 Provider/Actor 也要复用，而 `service` 出向不含 `tools`（与 SSRF 护栏上移同一理由，已两次踩到同一条分层规则）。
+
 ## 断点
 - [断点] **尚未装配进 `tool_face_assembly.dart`**——6 个 R 档依赖的源（ICS / 农历 / 时区）与 5 个 W 档的 Actor 均未落地，此时接线等于线级摆 14 个恒失败的工具（与 S5「不假上线」同一纪律）。P2 源就绪后一并装配。
 - [断点] 下一步（P2，按依赖顺序）：① **官方节假日表**导入（本地 bundle + 静态 JSON OTA，F3）；② `package:timezone` 引入（需用户确认新依赖）→ `tz_convert` + B1/B2/B3 时区归一；③ 纯 Dart 农历库引入（需用户确认）→ `resolve_date` / `month_grid` / `isLunar` 标记推演；④ ICS 解析与 RRULE 展开 + `CalendarFeedProvider` 真实源（service 层，含 SSRF 护栏调用、3 跳重定向、10s 超时缓存回退）；⑤ 5 个 W 档命令的 **Actor** 实现与 `CommandGateway` 登记；⑥ 标记存储与脱敏（E 拍板）；⑦ 系统日历读取（Android 权限 + 平台通道）；⑧ 全部就绪后装配 + index.md 锚点。

@@ -4,6 +4,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:good_template/action/command_gateway.dart';
+import 'package:good_template/mcp/calendar_provider.dart';
 import 'package:good_template/mcp/category_tool_face.dart';
 import 'package:good_template/mcp/settings_kv.dart';
 import 'package:good_template/ports.dart';

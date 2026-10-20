@@ -336,18 +336,32 @@ class _CalendarQuerySub extends SubAction {
     }
     final provider = _feeds;
     if (provider == null) return _unavailable('日历事件源（ICS / 系统日历）');
-    final events = await provider.query(
-      rangeStart: DateMath.fmt(start),
-      rangeEnd: DateMath.fmt(end),
-      timezone: params['timezone'] is String ? params['timezone'] as String : null,
-      feedIds: _stringList(params['feedIds']),
-      limit: params['limit'] == null ? null : parseInt(params['limit']),
-    );
+    final limit = _capOf(params['limit']);
+    if (limit case final String err) {
+      return _err('INVALID_ARGUMENT', err);
+    }
+    final cap = limit as int;
+
+    final List<CalendarEvent> events;
+    try {
+      events = await provider.query(
+        rangeStart: DateMath.fmt(start),
+        rangeEnd: DateMath.fmt(end),
+        timezone: params['timezone'] is String ? params['timezone'] as String : null,
+        feedIds: _stringList(params['feedIds']),
+      );
+    } on CalendarFeedException catch (e) {
+      // 源层机器码透出（区间超限 / 拉取失败 / 解析失败），不静默返空。
+      return _err(e.code, e.message, suggestion: e.suggestion);
+    }
+
+    final take = cap == 0 ? events.length : cap;
     return _jsonSuccess(<String, Object?>{
       'success': true,
-      'events': events.map((e) => e.toJson()).toList(),
-      'hasMore': false,
+      'events': events.take(take).map((e) => e.toJson()).toList(),
+      'hasMore': events.length > take,
       'timezone': 'UTC',
+      'note': '系统日历源（source: system）尚未实现（P2-⑦）；当前仅返回已订阅的在线 ICS 源',
     });
   }
 }
@@ -684,4 +698,12 @@ class _CalendarMarkerDeleteSub extends _WriteSub {
 List<String>? _stringList(Object? raw) {
   if (raw is! List) return null;
   return raw.whereType<String>().toList();
+}
+
+/// `limit` 解析：缺省返回 0（= 不限）；非正整数返回错误文案（**不静默兜底为全量**）。
+Object _capOf(Object? raw) {
+  if (raw == null) return 0;
+  final n = parseInt(raw);
+  if (n == null || n < 1) return 'limit 须为正整数（缺省不限）';
+  return n;
 }

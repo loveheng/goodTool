@@ -11,6 +11,20 @@ library;
 /// 避免两侧魔法数漂移。
 const int calendarMinRefreshMin = 5;
 
+/// **C1**：查询跨度硬上限（天）。超限报 `ERR_RANGE_TOO_WIDE`，不静默截断。
+/// tools 层与 `IcsFeedProvider` 双层复检共用本常量。
+const int calendarMaxRangeDays = 90;
+
+/// feed 列表持久化键（SettingsKv，JSON 数组）。Actor（service 层）与
+/// `IcsFeedProvider` 共用同一键，避免两侧各存一份导致读到不同列表。
+const String kCalendarFeedsKey = 'calendar_feeds';
+
+/// ICS 原文缓存键前缀（`ics_body_<feedId>`）。G3：`unsubscribe` 必须清该前缀缓存。
+const String kIcsBodyPrefix = 'ics_body_';
+
+/// 上次同步时间键前缀（`ics_sync_<feedId>`），`lastSyncTime` 与 G2 频控共用。
+const String kIcsSyncPrefix = 'ics_sync_';
+
 /// 订阅源刷新周期上限（分钟，1 周）。
 const int calendarMaxRefreshMin = 10080;
 
@@ -211,19 +225,35 @@ class CalendarMarker {
       };
 }
 
-/// 事件源端口（P2 真实源：ICS 拉取 + RFC 5545 解析 + RRULE 展开 + 脱敏）。
+/// 源层失败信号（携带机器码；工具层 / Actor 捕获后转结构化错误，不把堆栈漏给 Agent）。
+class CalendarFeedException implements Exception {
+  const CalendarFeedException(this.code, this.message, {this.suggestion});
+  final String code;
+  final String message;
+  final String? suggestion;
+  @override
+  String toString() => 'CalendarFeedException($code): $message';
+}
+
+/// 事件源端口（P2-④ 真实源：ICS 拉取 + RFC 5545 解析 + RRULE 展开 + 脱敏）。
 abstract class CalendarFeedProvider {
-  /// 按区间查询事件（C1 区间上限、C2 EXDATE/RECURRENCE-ID、D1 分页与固定排序）。
+  /// 按区间查询事件（C1 区间上限、C2 EXDATE/RECURRENCE-ID、D1 固定排序）。
+  ///
+  /// 返回**全量**（按 `start → uid` 排序）；分页截断与 `hasMore` 由调用方处理
+  /// （limit 不进端口——截断语义属于工具层，源层留全量便于二次过滤）。
   Future<List<CalendarEvent>> query({
     required String rangeStart,
     required String rangeEnd,
     String? timezone,
     List<String>? feedIds,
-    int? limit,
   });
 
   /// 列出系统源与订阅源。
   Future<List<CalendarFeed>> feeds();
+
+  /// 强制同步；返回成功刷新的源数。[feedId] 为空表示全部。
+  /// 频控（G2）命中抛 [CalendarFeedException]（code = `ERR_RATE_LIMITED`）。
+  Future<int> refresh({String? feedId});
 }
 
 /// 标记存储端口（用户私有 store；**写必经 CommandGateway**，本端口只读）。

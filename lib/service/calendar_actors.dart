@@ -17,25 +17,25 @@ import '../action/command_gateway.dart';
 import '../mcp/calendar_provider.dart';
 import '../mcp/settings_kv.dart';
 
-/// feed 列表持久化键（SettingsKv，JSON 数组）。
-const String kCalendarFeedsKey = 'calendar_feeds';
-
-/// refresh 最小间隔秒数（G2 频控；ICS 拉取落地时启用）。
-const int calendarRefreshMinIntervalSec = 30;
+/// feed 列表持久化键与刷新周期常量已上移内核
+/// （`kCalendarFeedsKey` / `calendarMinRefreshMin` 等，见 calendar_provider.dart）。
 
 /// 在 [gateway] 登记日历 5 个 W 档命令（命令名 = action 名）。
 ///
-/// 供装配件在 P2-⑧ 调用；[markers] 为标记写端口，[kv] 供 feed 列表与频控时间戳读写。
+/// 供装配件在 P2-⑧ 调用；[markers] 为标记写端口，[kv] 供 feed 列表与频控时间戳读写，
+/// [feeds] 为事件源（`refresh` 的真实同步入口；缺省 null ⇒ fail-closed）。
 void registerCalendarActors(
   CommandGateway gateway, {
   required SettingsKv kv,
   required CalendarMarkerWriter markers,
+  CalendarFeedProvider? feeds,
 }) {
   gateway.register('calendar_subscribe',
       (cmd) => _subscribe(kv, cmd.payload));
   gateway.register('calendar_unsubscribe',
       (cmd) => _unsubscribe(kv, cmd.payload));
-  gateway.register('calendar_refresh', (_) => _refresh());
+  gateway.register('calendar_refresh',
+      (cmd) => _refresh(feeds, cmd.payload));
   gateway.register('calendar_marker_add',
       (cmd) => _markerAdd(markers, cmd.payload));
   gateway.register('calendar_marker_delete',
@@ -125,16 +125,33 @@ Future<List<Map<String, Object?>>> _unsubscribe(
         suggestion: '先用 calendar_feeds 列出可用源');
   }
   await _saveFeeds(kv, feeds);
+  // G3 缓存生命周期：退订必须清该 feedId 的 ICS 缓存与同步时间。
+  await kv.settingsSet(<String, String>{
+    '$kIcsBodyPrefix$feedId': '',
+    '$kIcsSyncPrefix$feedId': '',
+  });
   return _ok(<String, Object?>{'feedId': feedId});
 }
 
-Future<List<Map<String, Object?>>> _refresh() async {
-  // ICS 拉取与解析尚未落地（P2-④）：此处 fail-closed，不假装同步成功
-  // （返回 success:true 会让 Agent 以为数据已更新）。
-  return _fail(
-      CalendarErr.sourceUnavailable,
-      '订阅源同步（ICS 拉取与解析）尚未实现',
-      suggestion: 'P2-④ 落地后本命令生效；查询请用 calendar_query');
+Future<List<Map<String, Object?>>> _refresh(
+  CalendarFeedProvider? feeds,
+  Map<String, Object?> payload,
+) async {
+  final provider = feeds;
+  if (provider == null) {
+    // fail-closed：没有真实源时不假装同步成功（success:true 会让 Agent 以为数据已更新）。
+    return _fail(
+        CalendarErr.sourceUnavailable,
+        '订阅源同步（ICS 拉取与解析）尚未接入',
+        suggestion: '装配 IcsFeedProvider 后本命令生效；查询请用 calendar_query');
+  }
+  try {
+    final feedId = payload['feedId'] is String ? payload['feedId'] as String : null;
+    final updated = await provider.refresh(feedId: feedId);
+    return _ok(<String, Object?>{'updatedCount': updated});
+  } on CalendarFeedException catch (e) {
+    return _fail(e.code, e.message, suggestion: e.suggestion);
+  }
 }
 
 // ---------------------------------------------------------------------------

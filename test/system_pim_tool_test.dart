@@ -401,4 +401,7 @@ class _FakeFeeds implements CalendarFeedProvider {
   Future<List<CalendarFeed>> feeds() async => <CalendarFeed>[
         const CalendarFeed(id: 'f1', name: '节假日', url: 'https://example.com/h.ics', refreshMin: 720),
       ];
+
+  @override
+  Future<int> refresh({String? feedId}) async => 0;
 }
