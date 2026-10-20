@@ -29,6 +29,14 @@ android {
         versionName = flutter.versionName
     }
 
+    // AIDL 编译器自 AGP 8 起**默认关闭**，需显式 opt-in。
+    // 本仓 `src/main/aidl/com/zzh/goodhub/mcp/` 提交了 goodhub 宿主接口
+    // （IMcpChannel / IMcpCallback），未开启时其生成类不参与编译，
+    // `McpBinderService.kt` 的 import 全部 Unresolved（存量构建阻塞项）。
+    buildFeatures {
+        aidl = true
+    }
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.
