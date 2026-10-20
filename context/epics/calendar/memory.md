@@ -21,6 +21,9 @@ last-merge: none
   5. **excludeWeekends 语义钉死**：周六日一律不计（含落在周末的调休补班）；`workdays_between` 则按「调休补班 > 法定假 > 周末」优先级把补班计入——两个口径差异已写进各自 description。
   6. **URL 护栏不用 `dart:io` 的 `InternetAddress`**：地址判定走字符串与正则即可覆盖 RFC 1918 / 回环 / 链路本地，守住「内核不沾平台 API」。
 
+- 2026-10-20 **S6-P2-① 节假日表落地（14 项单测，flutter test 298 全绿 + analyze 0 + arch-guard 7 条）**：新增 `lib/tools/calendar/holiday_table.dart`——内置 2026 年法定节假日表，**逐字照录国务院办公厅 2025-11-04 通报**（人民网/央广网/央视/中新社四方一致；法定假 33 天 + 调休补班 6 天；七假期 3/9/3/5/3/3/7 天；清明/端午/中秋原文为「放假」故无补班），版本号 `cn-2026.1` 并回写出参；`CnHolidayProvider.fromJson` 提供 **OTA 静态 JSON 同构入口**（ranges 区间展开 + workdays 补班，坏输入抛 `FormatException`）；`buildSystemPimTool` 默认表从 `EmptyHolidayProvider` 切为内置表。
+- **重要含义**：至此 3 个纯计算 R 档的节假日判断**真实可用**（此前仅跳周末）。测试按官方日期逐字断言，并把「工作日判定优先级（调休补班 > 法定假 > 周末）」按具体日期钉死。
+
 ## 断点
 - [断点] **尚未装配进 `tool_face_assembly.dart`**——6 个 R 档依赖的源（ICS / 农历 / 时区）与 5 个 W 档的 Actor 均未落地，此时接线等于线级摆 14 个恒失败的工具（与 S5「不假上线」同一纪律）。P2 源就绪后一并装配。
 - [断点] 下一步（P2，按依赖顺序）：① **官方节假日表**导入（本地 bundle + 静态 JSON OTA，F3）；② `package:timezone` 引入（需用户确认新依赖）→ `tz_convert` + B1/B2/B3 时区归一；③ 纯 Dart 农历库引入（需用户确认）→ `resolve_date` / `month_grid` / `isLunar` 标记推演；④ ICS 解析与 RRULE 展开 + `CalendarFeedProvider` 真实源（service 层，含 SSRF 护栏调用、3 跳重定向、10s 超时缓存回退）；⑤ 5 个 W 档命令的 **Actor** 实现与 `CommandGateway` 登记；⑥ 标记存储与脱敏（E 拍板）；⑦ 系统日历读取（Android 权限 + 平台通道）；⑧ 全部就绪后装配 + index.md 锚点。

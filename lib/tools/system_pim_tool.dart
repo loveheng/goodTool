@@ -19,6 +19,7 @@ import '../action/command_gateway.dart';
 import '../mcp/calendar_provider.dart';
 import '../mcp/category_tool_face.dart';
 import 'calendar/date_math.dart';
+import 'calendar/holiday_table.dart';
 
 /// **C1 防御**：查询跨度硬上限 90 天；超限报 `ERR_RANGE_TOO_WIDE`，
 /// 不静默截断（避免 Agent 误以为拿到全量）。
@@ -27,12 +28,13 @@ const int calendarMaxRangeDays = 90;
 /// 公开入口：构建 `system_pim` 领域网关（日历 + 标记 + 时间推演）。
 ///
 /// [gateway] 为写门禁端口（W 档必经）；[feeds] / [markers] 为 P2 真实源，
-/// 缺省 null ⇒ 相关 R 档 fail-closed；[holidays] 默认空表（**不编造官方节假日**）。
+/// 缺省 null ⇒ 相关 R 档 fail-closed；[holidays] 默认内置 **2026 年法定节假日表**
+/// （数据逐字照录国务院办公厅通知，见 `calendar/holiday_table.dart`）。
 CategoryTool buildSystemPimTool(
   CommandGateway gateway, {
   CalendarFeedProvider? feeds,
   CalendarMarkerStore? markers,
-  HolidayProvider holidays = const EmptyHolidayProvider(),
+  HolidayProvider holidays = cnHolidayBundled,
 }) {
   final cat = CategoryTool(
     'system_pim',
