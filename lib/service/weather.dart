@@ -24,6 +24,7 @@ import 'package:flutter/foundation.dart';
 import '../mcp/geo_provider.dart';
 import '../mcp/settings_kv.dart';
 import '../mcp/weather_provider.dart';
+import '../mcp/settings_keys.dart';
 
 /// 城市解析端点域名（GeoAPI 固定，不随 `qweather_host` 配置走）。
 const String qweatherGeoHost = 'geo.qweather.com';
@@ -32,13 +33,13 @@ const String qweatherGeoHost = 'geo.qweather.com';
 const String qweatherDefaultApiHost = 'devapi.qweather.com';
 
 /// SettingsKv 键：和风 API Key。
-const String kQweatherKey = 'qweather_key';
+const String kQweatherKey = SettingsKeys.qweatherKey;
 
 /// SettingsKv 键：数据主机（公共版 devapi / 商业版 api）。
-const String kQweatherHost = 'qweather_host';
+const String kQweatherHost = SettingsKeys.qweatherHost;
 
 /// SettingsKv 键：用户预设城市（Agent 无权写入，仅 App 设置页自设）。
-const String kWeatherLocation = 'weather_location';
+const String kWeatherLocation = SettingsKeys.weatherLocation;
 
 /// 天气数据缓存 TTL（开发版配额极低，命中即返回不发起新请求）。
 const Duration qweatherCacheTtl = Duration(minutes: 30);

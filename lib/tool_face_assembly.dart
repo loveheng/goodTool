@@ -18,6 +18,7 @@ import 'mcp/calendar_provider.dart';
 import 'mcp/category_tool_face.dart';
 import 'mcp/geo_provider.dart';
 import 'mcp/settings_kv.dart';
+import 'mcp/settings_keys.dart';
 import 'mcp/tool_face.dart';
 import 'mcp/weather_provider.dart';
 import 'service/amap_http_provider.dart';
@@ -37,10 +38,10 @@ import 'tools/weather_tool.dart';
 ///
 /// 经 KV 懒读（非构造期读死）：装配面是同步的，而设置读取是异步的；顺带使
 /// 用户在设置里补填 Key 后**无需重建工具面**即生效。
-const String kAmapWebKey = 'amap_web_key';
+const String kAmapWebKey = SettingsKeys.amapWebKey;
 
 /// app_settings 内部键：高德静态图数字签名密钥（可选，防 `INVALID_USER_SCODE`）。
-const String kAmapSecret = 'amap_secret';
+const String kAmapSecret = SettingsKeys.amapSecret;
 
 /// 装配本 app 的 MCP 工具面：[kv] 供各后端 Key 懒读；[sensor]/[http]/[weather]/
 /// [markers] 可注入桩（单测）；[gateway] 为写门禁端口（缺省新建 —— W 档工具
@@ -62,6 +63,7 @@ McpToolFace buildDefaultToolFace({
   WeatherProvider? weather,
   CalendarMarkerStore? markers,
   SystemCalendarPort? systemCalendar,
+  CalendarFeedProvider? feeds,
   CommandGateway? gateway,
 }) {
   // 定位/磁力计：真实平台实现（geolocator + 权限流）尚未接入，缺省走 Null 实现——
@@ -80,10 +82,11 @@ McpToolFace buildDefaultToolFace({
   final markerWriter = markers is CalendarMarkerWriter
       ? markers as CalendarMarkerWriter
       : markerStore as CalendarMarkerWriter;
-  final ics = CompositeCalendarProvider(
-    IcsFeedProvider(kv),
-    system: systemCalendar ?? const MethodChannelSystemCalendarPort(),
-  );
+  final ics = feeds ??
+      CompositeCalendarProvider(
+        IcsFeedProvider(kv),
+        system: systemCalendar ?? const MethodChannelSystemCalendarPort(),
+      );
   registerCalendarActors(
     writeGateway,
     kv: kv,

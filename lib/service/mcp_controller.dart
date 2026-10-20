@@ -6,6 +6,7 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import '../mcp/mcp_server.dart';
 import '../mcp/settings_kv.dart';
+import '../mcp/settings_keys.dart';
 import '../mcp/tool_face.dart';
 import 'http_transport.dart';
 import '../update/remote_config_store.dart';
@@ -48,7 +49,20 @@ class McpController extends ChangeNotifier {
   static const _keyToken = 'mcp_token';
   static const _keyEnabled = 'mcp_enabled';
 
-  static const _keyIdentityPrompt = 'identity_prompt';
+  /// 用户身份画像键（`SettingsKeys` 单一真相源；用户自设，Agent 无权写）。
+  static const _keyIdentityPrompt = SettingsKeys.identityPrompt;
+
+  /// 工具调用事件（代理内核 `McpServer.onCall`）——UI 侧订阅此流渲染实时调用流水。
+  ///
+  /// 本控**持有**该广播流并转发内核事件：内核 server 在 `enable()` 时才建、
+  /// `disable()` 时即毁，若直接把 `_server?.onCall` 抛给订阅者，订阅会随
+  /// server 重建而断流。故由本控做一层稳定代理（standards §7.1 成对生命周期）。
+  final StreamController<McpCallEvent> _callEvents =
+      StreamController<McpCallEvent>.broadcast();
+  StreamSubscription<McpCallEvent>? _callEventSub;
+
+  /// 工具调用事件流（UI 经 `lib/ui_ports` 订阅；类型化对象，非文本信封）。
+  Stream<McpCallEvent> get callEvents => _callEvents.stream;
 
   McpServer? _server;
   HttpTransport? _transport;
@@ -125,6 +139,8 @@ class McpController extends ChangeNotifier {
         },
       );
       _transport ??= HttpTransport(server: _server!);
+      // 转发内核调用事件到本控的稳定流——server 重建时订阅不断流。
+      _callEventSub ??= _server!.onCall.listen(_callEvents.add);
       await _transport!.start(port: defaultPort);
       // mDNS 广播随 2026-10-15 暴露面拍板退役（回环服务无需 LAN 发现，§11）。
       await kv.settingsSet({_keyEnabled: '1'});
@@ -149,6 +165,10 @@ class McpController extends ChangeNotifier {
       await _transport?.stop();
     } catch (_) {/* 服务可能已停止 */}
     _transport = null;
+    // 释放内核资源（事件流控制器）并断开转发订阅（standards §7.1/§7.2 成对生命周期）。
+    await _callEventSub?.cancel();
+    _callEventSub = null;
+    _server?.close();
     _server = null;
   }
 

@@ -4,7 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import 'mcp/mcp_server.dart';
-import 'ports.dart';
+import 'service/in_memory_secret_store.dart';
+import 'service/persistent_kv.dart';
 import 'tool_face_assembly.dart';
 
 /// 模板本地 Binder 插件后台入口（headless FlutterEngine，goodhub-local-plugin 终点）。
@@ -38,9 +39,19 @@ void mcpBinderMain() {
   // 后台 isolate 无 UI，但 MethodChannel 需要 ServicesBinding 初始化。
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 模板装配：内存 KV（真实 app 换持久化实现）+ 共用工具面装配（见 tool_face_assembly.dart）。
+  // 装配：持久化 KV（**懒开**——本入口是同步 `void`，无法 await，故首次访问时才开
+  // SharedPreferences）+ 凭证走 SecretStore 端口 + 共用工具面装配（见 tool_face_assembly.dart）。
+  //
+  // 跨 isolate 生效：SharedPreferences 底层是进程级存储，主 isolate（App UI）写入的
+  // 设置对本 isolate 可见——故 UI 侧配置的订阅源 / 开关对生产通道同样生效。
+  // 凭证例外：SecretStore 当前是**内存实现**，跨 isolate 不可见（待 Keystore 平台通道，
+  // 见 `docs/project/index.md` 架构债 #1）——缺凭证时后端动作 fail-closed 返机器码。
+  final kv = SecretAwareKv(
+    plain: LazySharedPrefsKv(),
+    secrets: InMemorySecretStore(),
+  );
   final server = McpServer(
-    toolFace: buildDefaultToolFace(kv: InMemoryKv()),
+    toolFace: buildDefaultToolFace(kv: kv),
     tokenProvider: () => null, // Binder 同签名零鉴权
   );
 

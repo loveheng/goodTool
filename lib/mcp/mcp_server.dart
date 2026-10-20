@@ -4,6 +4,34 @@ import 'dart:convert';
 import 'jsonrpc.dart';
 import 'tool_face.dart';
 
+/// 工具调用事件（内核侧吐；UI 侧经 `lib/ui_ports` 订阅，守 R4）。
+///
+/// 字段：`name` 工具名、`ts` 毫秒时间戳（epoch）、`elapsedMs` 耗时、`ok` 成功与否。
+/// `ok` 由工具面结果的 `isError` **唯一派生**（standards §3.3 G4）——不另设判定
+/// 口径，避免「内核说成功、客户端说失败」。
+///
+/// 本类是**类型化对象**而非 MCP 文本信封：UI 消费它不触 R2。
+class McpCallEvent {
+  const McpCallEvent({
+    required this.name,
+    required this.ts,
+    required this.elapsedMs,
+    required this.ok,
+  });
+
+  /// 被调用的工具名（领域网关的域工具名）。
+  final String name;
+
+  /// 毫秒时间戳（epoch）。
+  final int ts;
+
+  /// 耗时（毫秒）。
+  final int elapsedMs;
+
+  /// 是否成功（由工具面结果的 `isError` 唯一派生）。
+  final bool ok;
+}
+
 /// 内嵌 MCP 服务：Streamable HTTP（POST /mcp，application/json 单响应）。
 /// 自拾贝原样搬运（schedule-app.md §12），仅替换 serverInfo 与 instructions。
 /// v1 不做服务端主动推送：GET/DELETE 返回 405；也不签发会话 id（规范允许 MAY，
@@ -28,6 +56,33 @@ class McpServer {
   /// 线级对外标识（MCP `serverInfo`）：跟随本 app 包名与版本，勿留模板项目名。
   static const String serverName = 'good_template';
   static const String serverVersion = '0.1.0';
+
+  /// 工具调用事件（内核侧吐；UI 侧经 `lib/ui_ports` 订阅，守 R4）。
+  ///
+  /// 字段：`name` 工具名、`ts` 毫秒时间戳（epoch）、`elapsedMs` 耗时、`ok` 成功与否。
+  /// `ok` 由工具面结果的 `isError` **唯一派生**（standards §3.3 G4）——不另设
+  /// 判定口径，避免「内核说成功、客户端说失败」。
+  ///
+  /// 本类是**类型化对象**而非 MCP 文本信封：UI 消费它不触 R2。
+  final StreamController<McpCallEvent> _callEvents =
+      StreamController<McpCallEvent>.broadcast();
+
+  /// 工具调用事件流（广播；内核侧吐事件，UI 侧 `StreamBuilder` 接）。
+  ///
+  /// 生命周期：随 [close] 释放（standards §7.1/§7.2）。
+  Stream<McpCallEvent> get onCall => _callEvents.stream;
+
+  void _emitCall(String name, int elapsedMs, {required bool ok}) {
+    if (_callEvents.isClosed) return;
+    _callEvents.add(
+      McpCallEvent(
+        name: name,
+        ts: DateTime.now().millisecondsSinceEpoch,
+        elapsedMs: elapsedMs,
+        ok: ok,
+      ),
+    );
+  }
 
   /// 政策精华（§7 行为层第一层）：每次 initialize 必读。
   static const _builtinInstructions =
@@ -114,7 +169,18 @@ class McpServer {
         // 透传工具面产出的完整 result（含 isError）——内核不再硬编码 false，
         // 否则含"错误"字样的失败文本会被客户端当作成功（standards §3.3 G4）。
         // 内核**不按工具名做业务特例**（S8 收尾）：任何业务语义由工具面自行承载。
-        return await toolFace.call(name, args);
+        final sw = Stopwatch()..start();
+        try {
+          final result = await toolFace.call(name, args);
+          sw.stop();
+          _emitCall(name, sw.elapsedMilliseconds,
+              ok: result['isError'] != true);
+          return result;
+        } catch (_) {
+          sw.stop();
+          _emitCall(name, sw.elapsedMilliseconds, ok: false);
+          rethrow;
+        }
       case 'resources/list':
         return {'resources': <Map<String, Object?>>[]};
       case 'prompts/list':
@@ -130,4 +196,11 @@ class McpServer {
         'id': id,
         'error': {'code': code, 'message': message},
       };
+
+  /// 释放内核持有的资源（调用事件流控制器）。
+  ///
+  /// **幂等**（standards §7.2）：重复调用不抛；释放唯一入口 = owner 调本方法。
+  void close() {
+    if (!_callEvents.isClosed) _callEvents.close();
+  }
 }
