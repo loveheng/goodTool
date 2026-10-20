@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:good_template/mcp/geo_provider.dart';
 import 'package:good_template/mcp/settings_kv.dart';
 import 'package:good_template/mcp/tool_face.dart';
+import 'package:good_template/action/command_gateway.dart';
 import 'package:good_template/mcp/weather_provider.dart';
 import 'package:good_template/ports.dart';
 import 'package:good_template/tool_face_assembly.dart';
@@ -38,16 +39,27 @@ void main() {
   }
 
   group('能力面（tools/list 收敛到域数）', () {
-    test('只暴露 3 个领域工具：math_utility + geo + weather', () {
+    test('只暴露 4 个领域工具：math_utility + geo + weather + system_pim', () {
       final names = face().schemas().map((s) => s['name']).toList();
-      expect(names, ['math_utility', 'geo', 'weather']);
+      expect(names, ['math_utility', 'geo', 'weather', 'system_pim']);
     });
 
-    test('action 合计 12 项（math 3 + geo 8 + weather 1），与能力文档 1:1', () {
+    test('action 合计 26 项（math 3 + geo 8 + weather 1 + pim 14），与矩阵闭环', () {
       expect(actionsOf('math_utility'),
           ['calc_eval', 'unit_convert', 'unit_list']);
       expect(actionsOf('geo').length, 8);
       expect(actionsOf('weather'), ['weather_forecast']);
+      expect(actionsOf('system_pim'), hasLength(14));
+      expect(
+        actionsOf('system_pim'),
+        containsAll(<String>[
+          'calendar_query',
+          'calendar_subscribe',
+          'calendar_marker_add',
+          'calendar_month_grid',
+          'calendar_date_diff',
+        ]),
+      );
     });
 
     test('每个 action 描述带紧凑参数签名（消参数盲盒）', () {
@@ -147,6 +159,42 @@ void main() {
       expect(r['isError'], isTrue);
       expect((jsonOf(r)['error'] as Map)['code'],
           contains('PERMISSION_DENIED'));
+    });
+
+    test('system_pim 纯函数 R 档经装配可用（节假日表真实）', () async {
+      final r = await face().call('system_pim', {
+        'action': 'calendar_workdays_between',
+        'params': {
+          'startDate': '2026-10-01',
+          'endDate': '2026-10-11',
+        },
+      });
+      expect(r['isError'], isFalse);
+      final j = jsonOf(r);
+      expect(j['workdays'], 3); // 10-08、10-09、10-10（调休补班计入）
+      expect(j['holidayTableVersion'], 'cn-2026.1');
+    });
+
+    test('system_pim W 档已登记 Actor：subscribe 幂等落 KV（不发网络）', () async {
+      final r = await face().call('system_pim', {
+        'action': 'calendar_subscribe',
+        'params': {'url': 'webcal://example.com/holiday.ics'},
+      });
+      expect(r['isError'], isFalse);
+      final j = jsonOf(r);
+      expect(j['url'], 'https://example.com/holiday.ics'); // webcal 规整
+      expect(j['feedId'], isNotEmpty);
+    });
+
+    test('system_pim W 档：装配件总登记 Actor，作用域错误明确（不假装成功）', () async {
+      final f = buildDefaultToolFace(kv: kv, gateway: CommandGateway());
+      final r = await f.call('system_pim', {
+        'action': 'calendar_marker_delete',
+        'params': {'markerId': 'mk_none'},
+      });
+      expect(r['isError'], isTrue);
+      expect(((jsonOf(r)['error'] as Map)['code'] as String),
+          contains('ERR_MARKER_NOT_FOUND'));
     });
 
     test('未知分类 → UNKNOWN_TOOL', () async {

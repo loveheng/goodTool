@@ -61,8 +61,8 @@ flowchart TD
 ## 实现基线（现状）
 
 - MCP 内核纯 Dart，可脱离 Flutter 在 `test/smoke_test.dart` 全链路验证。
-- 工具面经 `lib/tool_face_assembly.dart` 装配收口（HTTP 调试通道与 Binder 生产通道共用同一份），已上线 `math_utility`（3 action）、`geo`（8 action，经 `AmapHttpProvider` 出网）、`weather`（1 action，经 `QWeatherProvider` 出网）——合计 3 域 12 action。剩余能力（日历 `system_pim` 14 action）按领域网关模式（`lib/tools/*_tool.dart`）落地即上工。
-- 未配置后端 Key 时能力**不静默降级**：高德动作回 `ERR_AMAP_KEY_MISSING`、和风动作回 `ERR_WEATHER_KEY_MISSING`，均带 `suggestion` 指引用户在设置页配置（standards §1.2 fail-closed）。
+- 工具面经 `lib/tool_face_assembly.dart` 装配收口（HTTP 调试通道与 Binder 生产通道共用同一份），已上线 **4 域 26 action**：`math_utility`(3) / `geo`(8) / `weather`(1) / `system_pim`(14，含 5 个用户委托写，经 `CommandGateway` 唯一写入口)。剩余 2 个 action（`calendar_resolve_date` / `calendar_tz_convert`）待农历引擎与时区库引入，当前为显式 fail-closed（带机器码与 suggestion）。
+- 未配置后端 Key 时能力**不静默降级**：高德动作回 `ERR_AMAP_KEY_MISSING`、和风动作回 `ERR_WEATHER_KEY_MISSING`、日历源缺位回 `ERR_CALENDAR_SOURCE_UNNAVAILABLE`，均带 `suggestion` 指引（standards §1.2 fail-closed）。
 - UI 层尚未构建（无 `lib/ui`）；引入 UI 后 arch-guard 将完整启用 R1–R6 扫描。
 
 ## 相关文档

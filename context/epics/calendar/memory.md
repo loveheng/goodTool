@@ -40,6 +40,10 @@ last-merge: none
 - **关键语义（已用测试钉死）**：① `daysRemaining` 以 **rangeStart** 为基准日而非系统当天（F1 禁 DateTime.now()）；② 平年 02-29 → 02-28 且标 `approximate`（不推到 3 月）；③ **农历标记不出 `date`**，只标 `lunarPending`——静默按公历算会把「农历八月十五」错算约一个月；④ 月网格 `lunar` 字段**直接不出**（出 null 会让 UI 误判「无农历」而非「未实现」）。
 - **剩余不可用（显式 fail-closed，非假上线）**：`calendar_resolve_date` 与 `calendar_tz_convert` —— 分别待 P2-③（农历库）与 P2-②（package:timezone），**两个依赖均等用户批准**。其余 12 个 action 已真实可用。
 
+- 2026-10-20 **S6-P2-⑧ 装配上线（flutter test 356 全绿）**：线级能力面 = **4 域 26 action**，与 `domain_gateway.md` 能力矩阵闭环。`buildDefaultToolFace` 收口 4 域 + 日历 Actor 登记；HTTP 调试通道与 Binder 生产通道同步生效。
+- **重要架构事实**：这是 `CommandGateway`（唯一写入口）**首次有真实写命令在生产路径上被用**——5 个日历 W 档经 `admits → validate → dispatch → Actor` 闭环，arch-guard R7 从「扫描模式」变成「真门禁」。
+- **装配默认用内存标记 store**：装配函数同步，而 SharedPreferences 打开是异步；持久化 store 由调用方异步打开后经参数注入（Binder isolate 每次拉起重建，语义可接受）。
+
 ## 断点
 - [断点] **尚未装配进 `tool_face_assembly.dart`**——6 个 R 档依赖的源（ICS / 农历 / 时区）与 5 个 W 档的 Actor 均未落地，此时接线等于线级摆 14 个恒失败的工具（与 S5「不假上线」同一纪律）。P2 源就绪后一并装配。
 - [断点] 下一步（P2，按依赖顺序）：① **官方节假日表**导入（本地 bundle + 静态 JSON OTA，F3）；② `package:timezone` 引入（需用户确认新依赖）→ `tz_convert` + B1/B2/B3 时区归一；③ 纯 Dart 农历库引入（需用户确认）→ `resolve_date` / `month_grid` / `isLunar` 标记推演；④ ICS 解析与 RRULE 展开 + `CalendarFeedProvider` 真实源（service 层，含 SSRF 护栏调用、3 跳重定向、10s 超时缓存回退）；⑤ 5 个 W 档命令的 **Actor** 实现与 `CommandGateway` 登记；⑥ 标记存储与脱敏（E 拍板）；⑦ 系统日历读取（Android 权限 + 平台通道）；⑧ 全部就绪后装配 + index.md 锚点。

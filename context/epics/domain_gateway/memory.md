@@ -27,5 +27,7 @@ last-merge: none
 - 2026-10-20 **S8 Contract 收尾完成（205 项单测 + analyze 0 issue + arch-guard 7 条）**：核查确认旧返回形状兼容层已无残留（`tool_face.dart` 契约即完整 result、`mcp_server.dart` 只透传、`smoke_test.dart` 无 sample 引用）。同轮收掉两处**模板/历史残留**：① `McpServer._dispatch` 的 `suggest_user_setting` 工具名嗅探特例——网关模式下线级已无该工具，分支只会静默失效，且违反「内核不感知业务工具名」；建议通道上移为宿主显式调用的 `McpController.pushSuggestion`（`suggestionStream` 语义不变，四份文档口径同步）。② `serverInfo.name` 与前台服务通知标题仍是模板项目名 `shiguang`/`拾光`，订正为 `good_template`/`goodTools`。
 - **遗留（非 S8 范围，已登记域内待办）**：`McpServer._builtinInstructions` 仍是「拾光排程师」政策文案，与本 app 四大能力角色不符，会误导 LLM 客户端；重写需产品定位拍板，故只登记不擅改。
 
+- 2026-10-20 **四域矩阵闭环（P2-⑧ 装配）**：`system_pim`(14，含 5 个 W 档) 经 S6-P1→P2-⑧ 落地并装配进 `tool_face_assembly.dart`，线级 = **4 域 26 action**（24 个可用，`calendar_resolve_date` / `calendar_tz_convert` 为显式 fail-closed，待农历引擎与 `package:timezone`）。**`CommandGateway` 写门禁首次在生产路径闭环**（admits → validate → dispatch → Actor），arch-guard R7 从扫描模式变真门禁。
+
 ## 断点
-- [断点] 下一步：剩余能力域排期——`weather`（1 action，`WeatherProvider` 端口已有、`NullWeatherProvider` 在位，最小）或 `system_pim`（14 action，含 5 个 W 档，需 `CalendarFeedProvider` + `CommandGateway` 注册，且有 product/calendar.md 全文可依）；二者落地后工具数 = 4 域，对齐 domain_gateway.md 的 26 action 矩阵。另可先清 `McpServer._builtinInstructions` 文案待办（需产品拍板）。
+- [断点] 下一步：① 批准两个依赖（`package:timezone`、农历库）以收掉最后 2 个 action；② 清 `McpServer._builtinInstructions` 的「拾光排程师」文案残留（需产品定位拍板）；③ 接入真实 `LocationSensorProvider`（geolocator），让 `geo_current`/`geo_compass` 与天气回退链末级真正可用；④ 系统日历源（`source: system`，需 Android 平台通道）与标记持久化 store（SharedPreferences 异步打开后注入装配件）。
