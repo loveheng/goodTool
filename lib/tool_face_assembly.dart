@@ -17,6 +17,7 @@ import 'action/command_gateway.dart';
 import 'mcp/calendar_provider.dart';
 import 'mcp/category_tool_face.dart';
 import 'mcp/geo_provider.dart';
+import 'mcp/pii_mask.dart';
 import 'mcp/settings_kv.dart';
 import 'mcp/settings_keys.dart';
 import 'mcp/tool_face.dart';
@@ -86,6 +87,10 @@ McpToolFace buildDefaultToolFace({
       CompositeCalendarProvider(
         IcsFeedProvider(kv),
         system: systemCalendar ?? const MethodChannelSystemCalendarPort(),
+        // U12a：脱敏开关态（`privacy_mask_pii`）经 KV 懒读注入两路合并源——
+        // Binder 生产通道与 UI 主 isolate 读同一份进程级设置，行为同源。
+        maskPiiEnabled: () async =>
+            piiMaskEnabledBy(await kv.settingsGet(SettingsKeys.privacyMaskPii)),
       );
   registerCalendarActors(
     writeGateway,

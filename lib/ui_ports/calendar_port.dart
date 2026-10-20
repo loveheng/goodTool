@@ -2,6 +2,7 @@ library;
 
 import '../mcp/calendar_provider.dart';
 import '../repository/marker_repository.dart';
+import '../service/calendar_permission_port.dart';
 
 /// 日历事件视图（类型化）。
 class EventView {
@@ -78,7 +79,31 @@ class CalendarSnapshotView {
   final String? message;
 }
 
-/// 日历 UI 适配层：事件与标记的**类型化**读取。
+/// 日历权限申请结果视图（U12b；类型化，UI 不碰平台语义）。
+class CalendarPermissionView {
+  const CalendarPermissionView({
+    required this.ok,
+    this.granted = false,
+    this.settingsOpened = false,
+    this.errorCode,
+    this.message,
+    this.suggestion,
+  });
+
+  final bool ok;
+
+  /// 已授权（可直接重试读取）。
+  final bool granted;
+
+  /// 已跳转系统设置页（提示用户去授予后返回重试）。
+  final bool settingsOpened;
+
+  final String? errorCode;
+  final String? message;
+  final String? suggestion;
+}
+
+/// 日历 UI 适配层：事件与标记的**类型化**读取 + 运行时权限申请（U12b）。
 ///
 /// 与 MCP 工具面**并列共享同一内核**：读的是同一批端口（`CalendarFeedProvider` /
 /// `CalendarMarkerStore`），但出口不同——这里给类型化对象，那里给 LLM 文本信封。
@@ -86,10 +111,14 @@ class CalendarPort {
   const CalendarPort({
     required this.feeds,
     required this.markers,
+    this.permission = const MethodChannelCalendarPermissionPort(),
   });
 
   final CalendarFeedProvider? feeds;
   final MarkerRepository markers;
+
+  /// 运行时权限申请端口（平台细节收敛处，守 R3）。
+  final CalendarPermissionPort permission;
 
   /// 取某天的日历快照（事件 + 重要标记）。
   Future<CalendarSnapshotView> snapshot({required String date}) async {
@@ -124,6 +153,28 @@ class CalendarPort {
         date: date,
         errorCode: e.code,
         message: e.message,
+      );
+    }
+  }
+
+  /// 申请日历运行时权限（U12b）。
+  ///
+  /// fail-closed：平台故障转 [CalendarPermissionView] 失败态（带机器码），
+  /// UI 展示可操作引导，不假装已授权。
+  Future<CalendarPermissionView> requestPermission() async {
+    try {
+      final outcome = await permission.request();
+      return CalendarPermissionView(
+        ok: true,
+        granted: outcome == CalendarPermissionOutcome.granted,
+        settingsOpened: outcome == CalendarPermissionOutcome.settingsOpened,
+      );
+    } on CalendarFeedException catch (e) {
+      return CalendarPermissionView(
+        ok: false,
+        errorCode: e.code,
+        message: e.message,
+        suggestion: e.suggestion,
       );
     }
   }

@@ -29,3 +29,10 @@ String? maskPii(String? text, {Set<String> levels = piiMaskDefaultLevels}) {
       .replaceAll(_landlineRe, piiMaskPlaceholder)
       .replaceAll(_emailRe, piiMaskPlaceholder);
 }
+
+/// 脱敏开关（`privacy_mask_pii`）的值 → 是否启用脱敏。
+///
+/// **保护性缺省**：未设置（null）= 开——对齐 E 拍板「默认对 Agent 视角 mask」，
+/// 开关只允许用户**显式放松**（写 `'0'`），不放宽默认。未设置时行为与开关接线前
+/// 完全一致（无回归）；U12a 后 UI 开关与内核行为同源。
+bool piiMaskEnabledBy(String? switchValue) => switchValue != '0';

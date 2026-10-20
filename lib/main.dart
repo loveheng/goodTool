@@ -13,27 +13,35 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import 'action/command_gateway.dart';
 import 'mcp/geo_provider.dart';
+import 'mcp/pii_mask.dart';
+import 'mcp/settings_keys.dart';
 import 'repository/marker_repository.dart';
 import 'repository/settings_repository.dart';
 import 'service/composite_calendar_provider.dart';
 import 'service/ics_feed_provider.dart';
-import 'service/in_memory_secret_store.dart';
+import 'service/keystore_secret_store.dart';
 import 'service/marker_store.dart';
 import 'service/mcp_controller.dart';
 import 'service/persistent_kv.dart';
 import 'service/settings_actors.dart';
 import 'service/system_calendar_port.dart';
+import 'service/weather.dart';
 import 'tool_face_assembly.dart';
+import 'ui/calculator_page.dart';
+import 'ui/calendar_page.dart';
+import 'ui/capabilities_page.dart';
 import 'ui/dashboard_page.dart';
+import 'ui/geo_page.dart';
 import 'ui/home_shell.dart';
-import 'ui/sandbox_page.dart';
 import 'ui/settings_page.dart';
 import 'ui/theme.dart';
+import 'ui/weather_page.dart';
 import 'ui_ports/calculator_port.dart';
 import 'ui_ports/calendar_port.dart';
 import 'ui_ports/geo_port.dart';
 import 'ui_ports/settings_port.dart';
 import 'ui_ports/status_port.dart';
+import 'ui_ports/weather_port.dart';
 
 void main() {
   runApp(const GoodToolsApp());
@@ -92,18 +100,22 @@ class _BootPageState extends State<_BootPage> {
 
   /// 装配全链（装配件职责，不含业务逻辑）。
   static Future<_AppScope> _assemble() async {
-    // ① 存储：普通设置持久化，凭证走安全存储抽象（不落明文）。
+    // ① 存储：普通设置持久化，凭证走安全存储抽象（Keystore 持密钥、密文落专用
+    // SharedPreferences——进程级、跨 isolate 可见，重启不丢、零明文留痕）。
     final plain = await SharedPrefsKv.open();
     final kv = SecretAwareKv(
       plain: plain,
-      secrets: InMemorySecretStore(),
+      secrets: const KeystoreSecretStore(),
     );
     final markerStore = await SharedPrefsMarkerStore.open();
 
-    // ② 日历合并源：ICS 订阅 + 系统日历（UI 与工具面**共用同一实例**）。
+    // ② 日历合并源：ICS 订阅 + 系统日历（UI 与工具面**共用同一实例**）；
+    // 脱敏开关态经 KV 注入合并源（U12a）——两路（ICS/系统）同开关语义。
     final feeds = CompositeCalendarProvider(
       IcsFeedProvider(kv),
       system: const MethodChannelSystemCalendarPort(),
+      maskPiiEnabled: () async =>
+          piiMaskEnabledBy(await kv.settingsGet(SettingsKeys.privacyMaskPii)),
     );
 
     // ③ 写门禁网关：用户设置 Actor 登记在**用户侧注册表**（AI 不可触达）。
@@ -112,11 +124,18 @@ class _BootPageState extends State<_BootPage> {
     SettingsActors(repository: repository).register(gateway);
 
     // ④ 工具面：与 Binder 生产通道共用同一装配（standards §3.3 S7 纪律）。
+    // 天气源与工具面**共用同一 QWeatherProvider 实例**——否则 UI 与 Agent 各拉
+    // 一次，频控与缓存分裂（同日历合并源纪律）。
+    final weather = QWeatherProvider(
+      kv,
+      sensor: const NullLocationSensorProvider(),
+    );
     final toolFace = buildDefaultToolFace(
       kv: kv,
       gateway: gateway,
       markers: markerStore,
       feeds: feeds,
+      weather: weather,
     );
 
     // ⑤ 总控 + 前台服务保活 + HTTP 回环调试通道。
@@ -143,6 +162,7 @@ class _BootPageState extends State<_BootPage> {
         feeds: feeds,
         markers: MarkerRepository(store: markerStore),
       ),
+      weatherPort: WeatherPort(weather),
     );
   }
 
@@ -163,10 +183,13 @@ class _BootPageState extends State<_BootPage> {
     }
     return HomeShell(
       dashboard: DashboardPage(port: scope.statusPort),
-      sandbox: SandboxPage(
-        calculator: scope.calculatorPort,
-        geo: scope.geoPort,
-        calendar: scope.calendarPort,
+      capabilities: CapabilitiesPage(
+        pages: <AppDomain, Widget>{
+          AppDomain.calculator: const CalculatorPage(),
+          AppDomain.geo: const GeoPage(),
+          AppDomain.calendar: CalendarPage(port: scope.calendarPort),
+          AppDomain.weather: WeatherPage(port: scope.weatherPort),
+        },
       ),
       settings: SettingsPage(
         port: scope.settingsPort,
@@ -187,6 +210,7 @@ class _AppScope {
     required this.calculatorPort,
     required this.geoPort,
     required this.calendarPort,
+    required this.weatherPort,
   });
 
   final McpController controller;
@@ -195,4 +219,5 @@ class _AppScope {
   final CalculatorPort calculatorPort;
   final GeoPort geoPort;
   final CalendarPort calendarPort;
+  final WeatherPort weatherPort;
 }

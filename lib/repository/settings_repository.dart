@@ -1,6 +1,7 @@
 library;
 
 import '../action/settings_commands.dart';
+import '../mcp/pii_mask.dart';
 import '../mcp/settings_kv.dart';
 import '../mcp/settings_keys.dart';
 
@@ -32,7 +33,13 @@ class SettingsRepository {
 
     final switches = <String, bool>{};
     for (final key in SettingsKeys.privacySwitchKeys) {
-      switches[key] = (await kv.settingsGet(key)) == '1';
+      final raw = await kv.settingsGet(key);
+      // U12a：脱敏开关为**保护性缺省开**（未设置 = 开，对齐内核 maskPii 默认档
+      // 与「默认对 Agent 视角 mask」的 E 拍板）——开关只允许用户显式放松。
+      // 其余开关（模糊定位）维持 opt-in 语义：未设置 = 关。
+      switches[key] = key == SettingsKeys.privacyMaskPii
+          ? piiMaskEnabledBy(raw)
+          : raw == '1';
     }
 
     final plain = <String, String>{};

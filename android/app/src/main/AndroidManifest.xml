@@ -7,6 +7,17 @@
          运行时未授权 → Kotlin 侧 PERMISSION_DENIED → Dart ERR_CALENDAR_PERMISSION
          （fail-closed，不返回空列表假装无日程）。 -->
     <uses-permission android:name="android.permission.READ_CALENDAR"/>
+
+    <!-- goodhub 本地 Binder 插件契约（thirdconnect.md §1.2.2 / §9.3）：本插件以
+         `McpBinderService`（action=`com.zzh.goodhub.action.MCP_SERVER` + meta-data
+         SERVER_ID/SERVER_TITLE 暴露）供宿主跨 app bind。bind 受 `signature` 权限护门，
+         该权限**必须被某同签名 app 声明**才可被宿主授予——此处防御性声明一次：即使宿主
+         侧漏声明，本 app 安装后权限即入系统，同签名宿主可自动获权（signature 权限对同签名
+         应用自动授予）。宿主侧须同款声明且两 app 同签名（见 goodhub 宿主 Manifest）。 -->
+    <permission
+        android:name="com.zzh.goodhub.permission.MCP_SERVER"
+        android:protectionLevel="signature" />
+
     <application
         android:label="good_template"
         android:name="${applicationName}"

@@ -18,6 +18,7 @@ import java.util.TimeZone
  * Dart 侧对应 `lib/service/system_calendar_port.dart`（`kSystemCalendarChannel`
  * 同名常量，勿单方改动）。职责边界：
  *  - **只读**：查询区间内 `CalendarContract.Instances`（已展开 RRULE / EXDATE）；
+ *  - **权限引导**（U12b）：`requestCalendarPermission` 未授权时跳转应用设置页；
  *  - **fail-closed**：未授权返回 `PERMISSION_DENIED`，绝不返回空列表假装无日程；
  *  - **时区换算住本层**（设备本地时区是唯一事实来源）：全天事件回传
  *    `YYYY-MM-DD`（B2 浮当日界，end 做排他日回退）；定时事件回传带显式
@@ -26,6 +27,9 @@ import java.util.TimeZone
 object SystemCalendarChannel {
     const val NAME = "com.goodhub.good_template/calendar"
     private const val METHOD_QUERY_EVENTS = "queryEvents"
+
+    /** U12b：运行时权限申请入口（未授权 → 跳转应用详情设置页引导授予）。 */
+    private const val METHOD_REQUEST_PERMISSION = "requestCalendarPermission"
 
     /**
      * 在 FlutterEngine 上注册 handler。**两个引擎都要挂**：
@@ -40,8 +44,45 @@ object SystemCalendarChannel {
         ).setMethodCallHandler { call, result ->
             when (call.method) {
                 METHOD_QUERY_EVENTS -> handleQuery(context.applicationContext, call, result)
+                METHOD_REQUEST_PERMISSION -> handleRequestPermission(context.applicationContext, result)
                 else -> result.notImplemented()
             }
+        }
+    }
+
+    /**
+     * U12b 权限申请（fail-closed 引导，不弹假授权）：
+     *  - 已授权 → `granted`；
+     *  - 未授权 → 打开本应用详情设置页（ACTION_APPLICATION_DETAILS_SETTINGS），
+     *    回 `settings_opened`——UI 据此提示「去系统设置授予日历权限，返回后重试」。
+     *
+     * 为什么不走 Activity.requestPermissions 对话框：MethodChannel 双程回调配
+     * onRequestPermissionsResult 需要 Activity 生命周期管道，而壳的后台引擎
+     * （McpBinderService）无 Activity 可挂；设置页跳转对两个引擎同构，且授权后
+     * 下次查询即生效（权限在查询时判定，非缓存判定）。
+     */
+    private fun handleRequestPermission(ctx: Context, result: MethodChannel.Result) {
+        if (ctx.checkSelfPermission(android.Manifest.permission.READ_CALENDAR)
+            == android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            result.success("granted")
+            return
+        }
+        try {
+            val intent = android.content.Intent(
+                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                android.net.Uri.fromParts("package", ctx.packageName, null)
+            ).apply {
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            ctx.startActivity(intent)
+            result.success("settings_opened")
+        } catch (e: Exception) {
+            result.error(
+                "SETTINGS_LAUNCH_FAILED",
+                "无法打开系统设置页：${e.message}",
+                null
+            )
         }
     }
 

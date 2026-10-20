@@ -2,6 +2,15 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // 插件接入契约 SDK（goodhub-mcp-sdk）：本机已 publishToMavenLocal 时走这里；
+        // 免认证的离线分发件目录可用 -PmcpSdkDist=<dir> 覆盖
+        // （默认取 sibling 仓的 dist/maven-repo，由 SDK 仓 scripts/dist.sh 产出）。
+        mavenLocal()
+        maven {
+            val dist = findProperty("mcpSdkDist")?.toString()
+                ?: rootProject.file("../../goodhub-mcp-sdk/dist/maven-repo").absolutePath
+            url = uri(dist)
+        }
     }
 }
 

@@ -26,7 +26,7 @@ updated: 2026-10-20
 | `tools/` | 工具面扩展（领域网关/子操作） | `mcp`（`tool_face`）、`action`（写门禁）、注入的 provider 端口 |
 | `repository/` | 读聚合层（R5 落点：设置 / 标记的**类型化**读） | `mcp`（`SettingsKv` 与端口模型）、`action`（快照类型）；**不持写端口** |
 | `ui_ports/` | UI 适配层（纯 Dart：类型化视图模型 + 内核调用收口） | 内核（`tools`/`geo`/`mcp` 端口）、`repository`、`action`；**禁** import Flutter |
-| `ui/` | 用户层（Flutter 控件：仪表盘 / 沙盒 / 设置） | `ui_ports`、Flutter material；**禁** import `mcp` 传输类型 / `tools` 内部子类 |
+| `ui/` | 用户层（Flutter 控件：仪表盘 / 能力 / 设置 + 四域子页面） | `ui_ports`、Flutter material；**禁** import `mcp` 传输类型 / `tools` 内部子类 |
 | `update/` | 自更新（安装器/远程配置热更/清单/服务） | 独立叶子域，零内部出向 |
 | 装配件 `main.dart`/`mcp_binder_entrypoint.dart`/`ports.dart`/`tool_face_assembly.dart` | 装配入口 | 任意域，但只持装配职责，业务逻辑不得回灌 |
 

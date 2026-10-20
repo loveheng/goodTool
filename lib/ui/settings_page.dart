@@ -205,7 +205,7 @@ class _SettingsPageState extends State<SettingsPage> {
             children: <Widget>[
               _SwitchRow(
                 label: '日程敏感字段过滤',
-                detail: '对日程标题 / 地点 / 描述中的电话与邮箱做掩码',
+                detail: '对日程地点与描述中的电话、邮箱做掩码（默认开；标题不脱敏）',
                 value: _snapshot?.isSwitchOn(SettingsKeys.privacyMaskPii) ??
                     false,
                 onChanged: (v) => _toggleSwitch(SettingsKeys.privacyMaskPii, v),

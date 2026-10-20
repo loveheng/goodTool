@@ -2,6 +2,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../../ui_ports/calculator_port.dart';
 import '../../ui_ports/status_port.dart';
 import '../tokens/app_tokens.dart';
 
@@ -222,6 +223,131 @@ class EmptyState extends StatelessWidget {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 结构化错误行：机器码 + 说明 + 自愈建议（不吞错、不静默）。
+///
+/// 各域子页面共用（计算器 / 地图 / 日历 / 天气的失败态同形状）。
+class ErrorLine extends StatelessWidget {
+  const ErrorLine({super.key, this.code, this.message, this.suggestion});
+
+  final String? code;
+  final String? message;
+  final String? suggestion;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = tokensOf(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          code == null ? (message ?? '') : '$code：${message ?? ''}',
+          style: t.typeScale.compact.copyWith(color: t.palette.danger),
+        ),
+        if (suggestion != null)
+          Padding(
+            padding: EdgeInsets.only(top: t.metrics.space4),
+            child: Text(
+              suggestion!,
+              style: t.typeScale.micro.copyWith(color: t.palette.textMuted),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// 计算结果展示：**双轨出参**（格式化串 + 无损机器值）——计算器子页面用。
+class CalcResultCard extends StatelessWidget {
+  const CalcResultCard({super.key, required this.view});
+
+  final CalcView view;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = tokensOf(context);
+    if (!view.ok) {
+      return ErrorLine(
+        code: view.errorCode,
+        message: view.message,
+        suggestion: view.suggestion,
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(view.text ?? '', style: t.typeScale.listItem),
+        SizedBox(height: t.metrics.space4),
+        TelemetryText(view.numeric ?? ''),
+        if (view.formula != null) ...<Widget>[
+          SizedBox(height: t.metrics.space4),
+          Text(
+            view.formula!,
+            style: t.typeScale.micro.copyWith(color: t.palette.textMuted),
+          ),
+        ],
+        if (view.warning != null) ...<Widget>[
+          SizedBox(height: t.metrics.space4),
+          Text(
+            view.warning!,
+            style: t.typeScale.micro.copyWith(color: t.palette.l2Warn),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// 引导卡（L2 警告色）：缺依赖（权限 / Key）时给可操作下一步（ui-design §3.4）。
+class GuidanceCard extends StatelessWidget {
+  const GuidanceCard({
+    super.key,
+    required this.message,
+    required this.actionLabel,
+    required this.onAction,
+    this.detail,
+  });
+
+  final String message;
+  final String? detail;
+  final String actionLabel;
+  final VoidCallback onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = tokensOf(context);
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(t.metrics.space12),
+      decoration: BoxDecoration(
+        color: t.palette.l2Warn.withValues(alpha: 0.12),
+        border: Border.all(
+          color: t.palette.l2Warn,
+          width: t.metrics.borderWidth,
+        ),
+        borderRadius: BorderRadius.circular(t.metrics.radiusMd),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            message,
+            style: t.typeScale.compact.copyWith(color: t.palette.l2Warn),
+          ),
+          if (detail != null) ...<Widget>[
+            SizedBox(height: t.metrics.space4),
+            Text(
+              detail!,
+              style: t.typeScale.micro.copyWith(color: t.palette.textMuted),
+            ),
+          ],
+          SizedBox(height: t.metrics.space8),
+          FilledButton(onPressed: onAction, child: Text(actionLabel)),
+        ],
       ),
     );
   }

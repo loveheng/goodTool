@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-10-20
+updated: 2026-10-20 (§3.3 能力 hub + 域子页面)
 ---
 
 # goodTools · UI 设计规范（运行时控制台风格）
@@ -71,9 +71,14 @@ flowchart LR
 - **实时调用流**：`McpServer.onCall` 在内核侧吐事件，UI 用 `StreamBuilder` 接——守住 R4。
 - **读走类型化内核，不走 MCP 信封**：UI 经 `lib/ui_ports`（纯 Dart 适配层）调共享纯内核取**类型化对象**渲染；`lib/mcp` 的 `McpServer`/`McpToolFace` 是 **LLM 前端专属**的传输适配，UI 既不得 import 其传输类型，也不得消费其 `{content,isError}` 文本信封（否则必触发 R2 jsonDecode）。完整接缝与红线落点见 **§8**。
 
-### 3.3 沙盒 Sandbox
+### 3.3 能力 Capabilities（hub + 四域子页面）
 
-时空计算（当前坐标 / 火星坐标 / 测距）、日历快照、高精计算器自测——不依赖外部模型自行验证服务准确；**数据来自纯内核与 Repository 的类型化结果**（与 MCP 工具面**并列共享同一内核**），UI 只读展示；**禁止消费 `McpToolFace.call` 的 `{content,isError}` 文本信封**（那是为 LLM 准备的，UI 吃了就要 jsonDecode，撞 R2——接缝与红线落点见 §8）。
+hub 入口页（Tab 级：仪表盘 / 能力 / 设置）+ 四个域子页面（计算器 / 日历 / 地图 / 天气，push 进入带返回）——不依赖外部模型自行验证服务准确；**数据来自纯内核与 Repository 的类型化结果**（与 MCP 工具面**并列共享同一内核**），UI 只读展示；**禁止消费 `McpToolFace.call` 的 `{content,isError}` 文本信封**（那是为 LLM 准备的，UI 吃了就要 jsonDecode，撞 R2——接缝与红线落点见 §8）。
+
+- hub 域卡：图标 + 域名 + 一句话摘要 + 依赖说明；卡面点击热区 ≥44×44dp（§4.4），chevron 表「可进入」。
+- 域子页面顶部可带**依赖门**：日历未授权 = 黄色警告卡 + 「去授权」按钮；天气缺 Key = 警告卡 + 「去设置」按钮——情感化且可操作（§3.4 同口径）。
+- 计算器/地图出参走**遥测轨**等宽容器（§2）；日历事件列表用阅读轨 + 时间列遥测轨混排。
+- 子页面**无写入口**：配置写只发生在设置页（R1 单一写入口心智）；子页面只读查询与本地计算。
 
 ### 3.4 设置 Settings
 

@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-10-20
+updated: 2026-10-20 (U5 收尾 · 架构债 #1 结项 · U12a/U12b · 域子页面拆分 · 插件接入 SDK 拆仓接入 + minSdk 基线 34)
 ---
 
 # goodTools · 功能 → 代码落点索引
@@ -32,14 +32,17 @@ updated: 2026-10-20
 | 地理/地图内核 | 高德数字签名（Sig/MD5） | `lib/geo/amap_sign.dart` | 参数升序拼接 + secret → MD5，防 INVALID_USER_SCODE |
 | 地理/地图内核 | 轨迹抽稀（RDP） | `lib/geo/rdp.dart` | 道格拉斯-普克，折线硬性≤80 点，防 URL 超 2048 触发 414 |
 | 地理/地图内核 | 高德 HTTP / 位置传感器端口（依赖反转接缝） | `lib/mcp/geo_provider.dart` | 对齐 `weather_provider.dart`；未注入源抛 `ERR_AMAP_KEY_MISSING`（工程规范 §1.2） |
-| 平台层（Android 原生） | 系统日历读取通道（平台通道实现 `SystemCalendarPort`） | `android/app/src/main/kotlin/com/goodhub/good_template/SystemCalendarChannel.kt` | MethodChannel `com.goodhub.good_template/calendar`；查 `CalendarContract.Instances`；**双引擎注册**（`MainActivity.configureFlutterEngine` + `McpBinderService.initEngine`——生产 Binder 通道漏挂即 `MissingPluginException`）；子线程查询，READ_CALENDAR 缺权 fail-closed |
+| 平台层（Android 原生） | 系统日历读取 + 权限引导通道（平台通道实现 `SystemCalendarPort` / `CalendarPermissionPort`） | `android/app/src/main/kotlin/com/goodhub/good_template/SystemCalendarChannel.kt` | MethodChannel `com.goodhub.good_template/calendar`；查 `CalendarContract.Instances`；**双引擎注册**（`MainActivity.configureFlutterEngine` + `McpBinderService.initEngine`——生产 Binder 通道漏挂即 `MissingPluginException`）；子线程查询，READ_CALENDAR 缺权 fail-closed；`requestCalendarPermission`（U12b）：未授权 → 跳转应用详情设置页（`ACTION_APPLICATION_DETAILS_SETTINGS`），回 `settings_opened`，不弹假授权 |
+| 平台层（Android 原生） | 凭证安全存储通道（平台通道实现 `SecretStore`，U5 结项） | `android/app/src/main/kotlin/com/goodhub/good_template/SecretStoreChannel.kt` | MethodChannel `com.goodhub.good_template/secret_store`；Keystore 持 AES-256-GCM 密钥（别名 `goodtools_secret_store_v1`，不可导出，硬件支持进 TEE/StrongBox），密文 Base64(IV‖密文) 落**专用** SharedPreferences `goodtools_secrets`（与普通设置物理隔离）；**双引擎注册**；**不设用户认证**（常驻壳 Agent 须无解锁读凭证，威胁模型=设备物理沦陷）；fail-closed：任何密钥/密文异常转 `KEYSTORE_ERROR`，不假装「未配置」 |
 | 读聚合层 | 用户设置与重要标记的类型化读（R5 落点） | `lib/repository/settings_repository.dart`、`lib/repository/marker_repository.dart` | UI 经此读，**不直连** KV / store；只持读端口（标记**写端口不在此暴露**——写必经 CommandGateway）；设置快照对凭证**只回显「已配置 + 掩码尾号」** |
-| UI 适配层 | 人前端的类型化适配（纯 Dart，无 Flutter） | `lib/ui_ports/calculator_port.dart`、`lib/ui_ports/geo_port.dart`、`lib/ui_ports/settings_port.dart`、`lib/ui_ports/status_port.dart`、`lib/ui_ports/calendar_port.dart` | 唯一出口：把内核结果转成**类型化视图模型**（`CalcView` / `GeoView` / `CallEventView` / `CalendarSnapshotView`），UI **禁**消费 MCP 文本信封（否则必 jsonDecode 触 R2）；可 headless 单测 |
-| 用户层 | 控制台三页（仪表盘 / 沙盒 / 设置）+ 通用组件 + 主题 | `lib/ui/home_shell.dart`、`lib/ui/dashboard_page.dart`、`lib/ui/sandbox_page.dart`、`lib/ui/settings_page.dart`、`lib/ui/components/app_components.dart`、`lib/ui/theme.dart`、`lib/ui/tokens/app_tokens.dart`、`lib/ui/tokens/app_theme_data.dart` | 唯一 import material 的地方；token 唯一出处 = `lib/ui/tokens/`（色彩/排印/几何/动效四组，深浅**语义名一致**）；组件**零魔法值**；状态**双通道**（色 + 形/文字） |
+| UI 适配层 | 人前端的类型化适配（纯 Dart，无 Flutter） | `lib/ui_ports/calculator_port.dart`、`lib/ui_ports/geo_port.dart`、`lib/ui_ports/settings_port.dart`、`lib/ui_ports/status_port.dart`、`lib/ui_ports/calendar_port.dart`、`lib/ui_ports/weather_port.dart` | 唯一出口：把内核结果转成**类型化视图模型**（`CalcView` / `GeoView` / `CallEventView` / `CalendarSnapshotView` / `WeatherView`），UI **禁**消费 MCP 文本信封（否则必 jsonDecode 触 R2）；可 headless 单测；`calendar_port` 另持运行时权限申请端口（U12b） |
+| 用户层 | 控制台三 Tab（仪表盘 / 能力 / 设置）+ 四域子页面 + 通用组件 + 主题 | `lib/ui/home_shell.dart`、`lib/ui/dashboard_page.dart`、`lib/ui/capabilities_page.dart`、`lib/ui/calculator_page.dart`、`lib/ui/geo_page.dart`、`lib/ui/calendar_page.dart`、`lib/ui/weather_page.dart`、`lib/ui/settings_page.dart`、`lib/ui/components/app_components.dart`、`lib/ui/theme.dart`、`lib/ui/tokens/app_tokens.dart`、`lib/ui/tokens/app_theme_data.dart` | 唯一 import material 的地方；token 唯一出处 = `lib/ui/tokens/`（色彩/排印/几何/动效四组，深浅**语义名一致**）；组件**零魔法值**；状态**双通道**（色 + 形/文字）；域子页面只读查询/本地计算、**无写入口**（配置写只经设置页，R1 单一心智）；hub→子页面 push 导航，子页面经 `ShellNav` 回跳设置 Tab |
 | 用户写入口 | 用户侧命令族（`user_*`）+ 设置 Actor + 网关用户侧注册表 | `lib/action/command_gateway.dart`、`lib/action/settings_commands.dart`、`lib/service/settings_actors.dart` | 网关**用户侧注册表**（`registerUser`/`dispatchUser`）与 AI 侧**物理分离**——AI 不可触达（信任模型机制化）；返回**类型化对象**非文本信封；用户侧跳过 AI 专属 `forbiddenKeys` 门（该门拦 AI 不拦用户本人） |
-| 凭证与持久化 | 设置键单一真相源 + 凭证安全存储端口 + 持久化 KV 分流 | `lib/mcp/settings_keys.dart`、`lib/mcp/secret_store.dart`、`lib/service/in_memory_secret_store.dart`、`lib/service/persistent_kv.dart` | 键常量收口（此前散落三处）；`SecretAwareKv` 把**凭证键分流到 SecretStore**、其余键走 SharedPreferences——凭证**不落明文**（standards §6.1）；当前 SecretStore 为内存实现（进程重启需重填），Keystore 平台通道待接线 |
+| 凭证与持久化 | 设置键单一真相源 + 凭证安全存储端口 + 持久化 KV 分流 + Keystore 平台实现 + 脱敏开关接线 | `lib/mcp/settings_keys.dart`、`lib/mcp/secret_store.dart`、`lib/service/keystore_secret_store.dart`、`lib/service/in_memory_secret_store.dart`、`lib/service/persistent_kv.dart` | 键常量收口（此前散落三处）；`SecretAwareKv` 把**凭证键分流到 SecretStore**、其余键走 SharedPreferences——凭证**不落明文**（standards §6.1）；平台实现 = `KeystoreSecretStore`（Keystore 持密钥、密文跨 isolate 可见，U5 结项，架构债 #1 清零）；`InMemorySecretStore` 退位为 headless 单测替身；平台失败透出 `SecretStoreException`（fail-closed，不吞 null）；`privacy_mask_pii` 开关经 `piiMaskEnabledBy`（`'0'`=关，未设置=开，保护性缺省）注入 ICS/系统两路合并源，每次查询现读 |
 | MCP 内核 | 工具调用事件流（内核侧吐，UI 侧订阅） | `lib/mcp/mcp_server.dart` | `McpCallEvent{name,ts,elapsedMs,ok}`——`ok` 由工具面 `isError` **唯一派生**；`McpController` 做稳定代理（server 重建不断流）；类型化对象非文本信封 |
-| 测试 | 纯 Dart 内核全链路测试（无设备可跑） | `test/smoke_test.dart`、`test/geo_test.dart`、`test/category_gateway_test.dart`、`test/unit_converter_test.dart`、`test/expression_lexer_test.dart`、`test/expression_parser_test.dart`、`test/expression_evaluator_test.dart`、`test/math_tool_test.dart`、`test/geo_tool_test.dart`、`test/tool_face_assembly_test.dart`、`test/amap_http_provider_test.dart`、`test/weather_tool_test.dart`、`test/qweather_provider_test.dart`、`test/system_pim_tool_test.dart`、`test/holiday_table_test.dart`、`test/ics_parser_test.dart`、`test/ics_feed_provider_test.dart`、`test/calendar_actors_test.dart`、`test/marker_math_test.dart`、`test/composite_calendar_provider_test.dart`、`test/tz_math_test.dart`、`test/lunar_math_test.dart`、`test/ui_console_test.dart` | 覆盖 InMemoryKv / CommandGateway / McpServer / 坐标互转闭环 / 静态图 URL / 八方位 / 网关派发契约（枚举外拦截、写门禁拦截、错误前缀注入、isError 唯一派生）/ 单位换算四模型与 reciprocal 跨制反比 / Sanitizer 保守清洗与位移回填 / 解析器优先级-结合性、隐式乘法、百分比歧义 warning、嵌套深度红线 / 求值器 Decimal 精确性、运算符语义、超越函数、单位换算、错误码与 EVAL_STEP_LIMIT / 领域网关适配层（math 3 + geo 8 对账、坐标归一化、错误机器码）/ **装配收口**（工具数 = 域数 4、action 合计 26、双通道共用、Key 懒读即配即生效、未配 Key fail-closed）/ **高德 REST 真实链路**（本地 `HttpServer` 验证 key 注入、非 200、非 JSON、结构漂移）/ 日历域全链路（14 action 对账、W 档门禁真验、节假日表逐字对账、RFC 5545 展开与 EXDATE/override、农历三策略、时区 DST、ICS 拉取与复合键、合并源 warnings）/ **人前端接缝**（AI 侧不可触达 `user_*` 命令、凭证零明文回显、凭证键与普通键分流、Actor 结构化失败、适配层双轨出参与越界拒绝） |
+| 测试 | 纯 Dart 内核全链路测试（无设备可跑） | `test/smoke_test.dart`、`test/geo_test.dart`、`test/category_gateway_test.dart`、`test/unit_converter_test.dart`、`test/expression_lexer_test.dart`、`test/expression_parser_test.dart`、`test/expression_evaluator_test.dart`、`test/math_tool_test.dart`、`test/geo_tool_test.dart`、`test/tool_face_assembly_test.dart`、`test/amap_http_provider_test.dart`、`test/weather_tool_test.dart`、`test/qweather_provider_test.dart`、`test/system_pim_tool_test.dart`、`test/holiday_table_test.dart`、`test/ics_parser_test.dart`、`test/ics_feed_provider_test.dart`、`test/calendar_actors_test.dart`、`test/marker_math_test.dart`、`test/composite_calendar_provider_test.dart`、`test/tz_math_test.dart`、`test/lunar_math_test.dart`、`test/ui_console_test.dart`、`test/keystore_secret_store_test.dart`、`test/calendar_privacy_permission_test.dart`、`test/calendar_permission_port_test.dart`、`test/weather_port_test.dart` | 覆盖 InMemoryKv / CommandGateway / McpServer / 坐标互转闭环 / 静态图 URL / 八方位 / 网关派发契约（枚举外拦截、写门禁拦截、错误前缀注入、isError 唯一派生）/ 单位换算四模型与 reciprocal 跨制反比 / Sanitizer 保守清洗与位移回填 / 解析器优先级-结合性、隐式乘法、百分比歧义 warning、嵌套深度红线 / 求值器 Decimal 精确性、运算符语义、超越函数、单位换算、错误码与 EVAL_STEP_LIMIT / 领域网关适配层（math 3 + geo 8 对账、坐标归一化、错误机器码）/ **装配收口**（工具数 = 域数 4、action 合计 26、双通道共用、Key 懒读即配即生效、未配 Key fail-closed）/ **高德 REST 真实链路**（本地 `HttpServer` 验证 key 注入、非 200、非 JSON、结构漂移）/ 日历域全链路（14 action 对账、W 档门禁真验、节假日表逐字对账、RFC 5545 展开与 EXDATE/override、农历三策略、时区 DST、ICS 拉取与复合键、合并源 warnings）/ **人前端接缝**（AI 侧不可触达 `user_*` 命令、凭证零明文回显、凭证键与普通键分流、Actor 结构化失败、适配层双轨出参与越界拒绝） |
+
+| Android 桥接 | 本地 Binder 插件服务（server 端）+ 契约 SDK 依赖 | `android/app/src/main/kotlin/com/goodhub/good_template/McpBinderService.kt`、`android/app/build.gradle.kts` | **2026-10-20 改用官方 SDK**（`com.zzh.goodhub.mcp:goodhub-mcp-plugin-core:0.1.1`）：继承 `GoodHubPluginService` + 重写 `handleJsonRpc` 接管路由（业务层在 Dart，SDK 反射派发器扫不到 `@McpTool`，不接管则 `tools/list` 返回空、工具全丢）；**F1**：tools/call 走 `_async` + onEvent 终帧切片，不得退化；终帧推送用 SDK `tryEmitEvent`（回报成败，保住 `[DEGRADE]` 可观测性）；契约唯一物理副本在 goodhub-mcp-sdk 仓 `:contract`，本仓自拷贝 `android/app/src/main/aidl/` 已删 |
 
 ## 2. 文档落点
 
@@ -63,10 +66,10 @@ updated: 2026-10-20
 
 | # | 债 | 落点 | 状态 |
 |---|----|------|------|
-| #1 | **凭证无平台级安全存储**：普通设置与重要标记已落 SharedPreferences（`LazySharedPrefsKv` 跨 isolate 可见——生产通道与 UI 共用同一份），但 `SecretStore` 当前只有**内存实现**：① 进程重启后地图/天气 Key 失位（用户须重填）；② **跨 isolate 不可见**——UI 写入的凭证对 Binder 生产通道的 Agent 不可见。**绝不**降级为明文落盘（standards §6.1） | `lib/mcp/secret_store.dart`、`lib/service/in_memory_secret_store.dart`、`lib/service/persistent_kv.dart`、`lib/mcp_binder_entrypoint.dart` | 活跃（待 Android Keystore 平台通道实现 `SecretStore`（进程级、跨 isolate 可见）并于装配期注入；接口已就位，实现接入不改装配面） |
+| （空——#1 已结项，见归档区） | | | |
 
 <!-- 归档区（结项后移入，压缩为一行）：
-- #N 摘要 → 落点 → 结项日期
+- #1 凭证无平台级安全存储（内存 SecretStore 重启失位 + 跨 isolate 不可见）→ `SecretStoreChannel.kt`（Keystore AES-256-GCM + 密文专用 SharedPreferences）+ `keystore_secret_store.dart` 装配注入 → 结项 2026-10-20
 -->
 
 ## 4. 工程基线数据
@@ -88,3 +91,12 @@ updated: 2026-10-20
 | 文件 | 治理策略 |
 |------|----------|
 | （空） | 软红线 800 行；超标即登记，降到阈值下即移出 |
+
+### 4.3 环境基线（SDK 与契约）
+
+| 项 | 值 | 依据 |
+|---|---|---|
+| `minSdk` | **34**（Android 14） | 插件接入 SDK（`goodhub-mcp-plugin-core` / `goodhub-mcp-contract`）两模块均 `minSdk=34`，app 低于 34 会 manifest merger 直接失败（`uses-sdk:minSdkVersion 24 cannot be smaller than version 34`）；goodhub 本地插件链路本身即 Android 14+ 基线 |
+| 契约来源 | `com.zzh.goodhub.mcp:goodhub-mcp-contract`（SDK 仓 `:contract` 模块提供） | 契约唯一物理副本在独立仓 `goodhub-mcp-sdk`；本仓自拷贝 `android/app/src/main/aidl/` 已删（2026-10-20） |
+| 插件 SDK | `com.zzh.goodhub.mcp:goodhub-mcp-plugin-core:0.1.1` | 版本与 `contract_version` 绑定，见 SDK 仓 `VERSION` |
+| 仓内解析通路 | `mavenLocal()` + 离线分发件目录（`-PmcpSdkDist=<dir>` 覆盖，默认 sibling 仓 `dist/maven-repo`） | 公网坐标（GitHub Packages）需 token，详见 SDK 仓 README §2 |

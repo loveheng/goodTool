@@ -57,7 +57,7 @@ class GeoView {
 /// 时空计算适配层：坐标纠偏与测距。
 ///
 /// 纯 Dart 内核（`lib/geo/coord_convert.dart`）——**不需任何 Key、不需任何权限**，
-/// 故沙盒页的这部分永远可用；设备定位另走 [GeoPort] 之外的 Provider 端口。
+/// 故地图子页面的这部分永远可用；设备定位另走 [GeoPort] 之外的 Provider 端口。
 class GeoPort {
   const GeoPort();
 

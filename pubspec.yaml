@@ -1,7 +1,7 @@
 name: good_template
 description: "goodhub 服务端模板：Android 常驻壳 + 内嵌 MCP 服务端内核。新 app 以此起底，实现端口 + 注册工具面即可上工。"
 publish_to: 'none'
-version: 0.1.0+1
+version: 0.1.0+34
 
 environment:
   sdk: ^3.13.4

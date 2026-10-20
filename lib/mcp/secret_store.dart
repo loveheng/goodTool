@@ -18,3 +18,26 @@ abstract class SecretStore {
   /// 删除凭证。
   Future<void> delete(String key);
 }
+
+/// [SecretStore] 平台失败的机器码（standards §1.2 fail-closed 透出）。
+class SecretStoreErr {
+  const SecretStoreErr._();
+
+  /// 通道未注册（无平台引擎 / 非 Android 运行环境）。
+  static const String unavailable = 'unavailable';
+}
+
+/// 凭证安全存储故障（fail-closed）：读取方按「存储不可用」处理，
+/// **绝不**被吞成 null 假装「未配置」——那会让用户以为没填过 Key。
+class SecretStoreException implements Exception {
+  const SecretStoreException(this.code, this.message);
+
+  /// 机器码（[SecretStoreErr.unavailable] 或平台侧 code，如 `KEYSTORE_ERROR`）。
+  final String code;
+
+  /// 人可读原因（禁含凭证明文）。
+  final String message;
+
+  @override
+  String toString() => 'SecretStoreException($code): $message';
+}

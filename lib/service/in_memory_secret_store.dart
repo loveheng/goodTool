@@ -4,11 +4,12 @@ import '../mcp/secret_store.dart';
 
 /// 内存凭证存储：**不落盘**。
 ///
-/// 存在的理由：凭证绝不能落明文 `SharedPreferences`（standards §6.1），而
-/// Android Keystore 平台通道尚未接线——本实现是**当前唯一安全**的缺省：
-/// 进程重启后凭证失位（用户需重填），**不**以明文形式留痕。
+/// 历史缺省（Keystore 平台通道接线前的唯一安全实现）：凭证绝不落明文
+/// `SharedPreferences`（standards §6.1），进程重启失位但不以明文留痕。
 ///
-/// 平台实现（Keystore 通道）接线后，替换本类即可，装配面无需改动。
+/// **现状（U5 收尾后）**：生产装配已换 `KeystoreSecretStore`（Keystore 持密钥、
+/// 密文跨 isolate 可见）；本类保留为 **headless 单测替身**——测试需要可断言的
+/// 进程内凭证存储，且不得引入平台通道依赖。
 class InMemorySecretStore implements SecretStore {
   final Map<String, String> _store = <String, String>{};
 

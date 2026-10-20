@@ -24,6 +24,7 @@ import 'dart:io';
 import '../mcp/calendar_provider.dart';
 import '../mcp/ics_parser.dart';
 import '../mcp/pii_mask.dart';
+import '../mcp/settings_keys.dart';
 import '../mcp/settings_kv.dart';
 
 /// 重定向上限（C3）。
@@ -112,6 +113,11 @@ class IcsFeedProvider implements CalendarFeedProvider {
         ? all
         : all.where((f) => feedIds.contains(f.id)).toList();
 
+    // U12a：脱敏开关态每次查询现读（`'0'` = 用户显式关闭；未设置 = 开，
+    // 保护性缺省对齐 E 拍板）。用户改开关即时生效，无需重建源。
+    final mask =
+        piiMaskEnabledBy(await _kv.settingsGet(SettingsKeys.privacyMaskPii));
+
     final out = <CalendarEvent>[];
     for (final feed in selected) {
       final body = await _bodyOf(feed.id, feed.url, allowStale: true);
@@ -123,7 +129,7 @@ class IcsFeedProvider implements CalendarFeedProvider {
         // 区间含末日：ICS 展开按 [from, to+1d) 过滤，避免全天事件丢最后一天。
         to.add(const Duration(days: 1)),
       )) {
-        out.add(_toEvent(feed, i, cached: body.cached));
+        out.add(_toEvent(feed, i, cached: body.cached, mask: mask));
       }
     }
 
@@ -278,7 +284,7 @@ class IcsFeedProvider implements CalendarFeedProvider {
   // ---------------------------------------------------------------------------
 
   CalendarEvent _toEvent(CalendarFeed feed, IcsInstance inst,
-      {required bool cached}) {
+      {required bool cached, required bool mask}) {
     final e = inst.event;
     return CalendarEvent(
       // G4：跨源 UID 可能碰撞，事件主键用 feedId:uid 复合键。
@@ -287,8 +293,9 @@ class IcsFeedProvider implements CalendarFeedProvider {
       start: _iso(inst.start, e.isAllDay),
       end: _iso(inst.end, e.isAllDay),
       isAllDay: e.isAllDay,
-      location: maskPii(e.location),
-      description: maskPii(e.description),
+      // U12a：开关关 = 原文透出（用户显式选择）；开/未设置 = maskPii 默认档。
+      location: mask ? maskPii(e.location) : e.location,
+      description: mask ? maskPii(e.description) : e.description,
       source: 'feed',
       feedId: feed.id,
       feedName: feed.name,

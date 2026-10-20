@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import 'mcp/mcp_server.dart';
-import 'service/in_memory_secret_store.dart';
+import 'service/keystore_secret_store.dart';
 import 'service/persistent_kv.dart';
 import 'tool_face_assembly.dart';
 
@@ -44,11 +44,12 @@ void mcpBinderMain() {
   //
   // 跨 isolate 生效：SharedPreferences 底层是进程级存储，主 isolate（App UI）写入的
   // 设置对本 isolate 可见——故 UI 侧配置的订阅源 / 开关对生产通道同样生效。
-  // 凭证例外：SecretStore 当前是**内存实现**，跨 isolate 不可见（待 Keystore 平台通道，
-  // 见 `docs/project/index.md` 架构债 #1）——缺凭证时后端动作 fail-closed 返机器码。
+  // 凭证同此口径（U5 收尾）：Keystore 持密钥、密文落专用 SharedPreferences，
+  // 本 isolate 与主 isolate 解密同值——UI 写的 Key 对 Agent 可见；缺凭证时
+  // 后端动作 fail-closed 返机器码（ERR_*_KEY_MISSING）。
   final kv = SecretAwareKv(
     plain: LazySharedPrefsKv(),
-    secrets: InMemorySecretStore(),
+    secrets: const KeystoreSecretStore(),
   );
   final server = McpServer(
     toolFace: buildDefaultToolFace(kv: kv),

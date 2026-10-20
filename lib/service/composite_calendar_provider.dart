@@ -8,6 +8,10 @@
 //     以 `warnings`（机器码 + 文案）显式透出——不静默返空，也不假装查到。
 //
 // 落点依据 standards §1.3：合并编排住 service 层，内核只见端口（R4）。
+//
+// U12a：脱敏开关（`privacy_mask_pii`）经 [maskPiiEnabled] 注入（读 KV 的闭包）——
+// 本类不持 KV（KV 归 ICS 源），用注入保持「合并编排不碰存储」；缺省 null = 开
+// （保护性缺省，与 ICS 路 `piiMaskEnabledBy` 同语义）。
 library;
 
 import '../mcp/calendar_provider.dart';
@@ -17,13 +21,20 @@ import '../mcp/pii_mask.dart';
 const String kSystemCalendarFeedId = 'system';
 
 class CompositeCalendarProvider implements CalendarFeedProvider {
-  CompositeCalendarProvider(this._ics, {this.system});
+  CompositeCalendarProvider(
+    this._ics, {
+    this.system,
+    this._maskPiiEnabled,
+  });
 
   final CalendarFeedProvider _ics;
 
   /// null = 系统源未注入（query 出 ERR_CALENDAR_SOURCE_UNAVAILABLE warning，
   /// fail-closed 不静默降级）。
   final SystemCalendarPort? system;
+
+  /// 脱敏开关解析（U12a；null = 开，保护性缺省）。
+  final Future<bool> Function()? _maskPiiEnabled;
 
   @override
   Future<CalendarQueryResult> query({
@@ -60,7 +71,11 @@ class CompositeCalendarProvider implements CalendarFeedProvider {
       try {
         final raw =
             await port.readEvents(rangeStart: rangeStart, rangeEnd: rangeEnd);
-        out.addAll(raw.map(_toEvent));
+        // U12a：系统路与 ICS 路同一开关语义（每次查询现读；null 解析器 = 开）。
+        final mask = _maskPiiEnabled == null
+            ? true
+            : await _maskPiiEnabled();
+        out.addAll(raw.map((r) => _toEvent(r, mask: mask)));
       } on CalendarFeedException catch (e) {
         warnings.add(_warn(e.code, e.message));
       }
@@ -107,14 +122,16 @@ class CompositeCalendarProvider implements CalendarFeedProvider {
   /// 原始事件 → CalendarEvent（脱敏 + G4 复合键 + D2 视图字段）。
   ///
   /// 同一事件跨天 RRULE 在平台层回传多实例，uid 需带 start 消重：`system:<uid>:<start>`。
-  CalendarEvent _toEvent(SystemCalendarRawEvent r) => CalendarEvent(
+  CalendarEvent _toEvent(SystemCalendarRawEvent r, {required bool mask}) =>
+      CalendarEvent(
         uid: '$kSystemCalendarFeedId:${r.uid}:${r.start}',
         title: r.title,
         start: r.start,
         end: r.end,
         isAllDay: r.isAllDay,
-        location: maskPii(r.location),
-        description: maskPii(r.description),
+        // U12a：开关关 = 原文透出；开/未设置 = maskPii 默认档。
+        location: mask ? maskPii(r.location) : r.location,
+        description: mask ? maskPii(r.description) : r.description,
         source: kSystemCalendarFeedId,
         feedId: kSystemCalendarFeedId,
         feedName: r.calendarName,

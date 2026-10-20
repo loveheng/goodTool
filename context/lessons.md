@@ -35,3 +35,5 @@ last-merge: 2026-10-20
 ## 构建（Android 工具链 · 2026-10-20 归并自 ui-console）
 
 **AGP 8+ 的 AIDL 编译器默认关闭** — 现象: `McpBinderService.kt` 的 `import com.zzh.goodhub.mcp.*` 全部 `Unresolved reference 'zzh'`（8 处），但仓内 `src/main/aidl/com/zzh/goodhub/mcp/` 的 `.aidl` 源**确实存在** | 根因: 自 AGP 8 起 AIDL 编译**不再默认开启**，未写 `buildFeatures { aidl = true }` 则 `.aidl` 不生成类，import 全部落空——**文件在 ≠ 会被编译** | 处置: `android/app/build.gradle.kts` 增 `buildFeatures { aidl = true }` | 回归: `toolbox run build-apk`（修后 APK 编译通过，154M debug 全架构）
+
+> **2026-10-20 补充（坑已在本仓消失，教训保留）**：自拷 AIDL（`android/app/src/main/aidl/com/zzh/goodhub/mcp/`）随插件接入 SDK 拆仓一并删除，`buildFeatures { aidl = true }` 同步移除——契约类改由 `com.zzh.goodhub.mcp:goodhub-mcp-contract` 坐标提供（唯一物理副本在 goodhub-mcp-sdk 仓 `:contract` 模块）。本坑在本仓不再复现。教训仍成立：**AGP 8+ 的 `.aidl` 文件不 opt-in `aidl = true` 就不生成类，文件在 ≠ 会被编译**。
