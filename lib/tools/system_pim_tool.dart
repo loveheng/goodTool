@@ -6,13 +6,19 @@
 // **只 buildCommand**，鉴权与派发由 `CategoryTool` 网关层统一执行——G3 / arch-guard R7）
 // + 9 个 R 档。
 //
-// **落地进度（P1）**：3 个纯函数 R 档（`date_calc` / `date_diff` / `workdays_between`）
-// 已真实实现（零外部依赖、确定性可测）；其余 6 个 R 档依赖 ICS 解析 / 农历引擎 /
-// 时区库（P2），**源未注入时按 standards §1.2 fail-closed**，返回
-// `ERR_CALENDAR_SOURCE_UNAVAILABLE`——不返回空列表假装「查到了但没有」。
+// **落地进度（P2 完毕）**：14 个 action 中 13 个真实可用——
+// - 纯函数 3 档（date_calc / date_diff / workdays_between）+ 农历 2 档
+//   （resolve_date / month_grid / marker_list 的农历分支，P2-③ package:lunar）
+//   + 时区 1 档（tz_convert，P2-② package:timezone，B3/B4/B5）；
+// - ICS 3 档（query / feeds / refresh）经 `CalendarFeedProvider` 注入；
+// - 标记 2 档经 `CalendarMarkerStore` 注入；缺源时按 standards §1.2
+//   **fail-closed** 返 `ERR_CALENDAR_SOURCE_UNAVAILABLE`（不假上线）。
+// 唯一缺口：`calendar_query` 的 `source: system`（P2-⑦ 平台通道，等排期）。
 library;
 
 import 'dart:convert';
+
+import 'package:timezone/timezone.dart' as tz;
 
 import '../action/calendar_commands.dart';
 import '../action/command_gateway.dart';
@@ -20,7 +26,10 @@ import '../mcp/calendar_provider.dart';
 import '../mcp/category_tool_face.dart';
 import 'calendar/date_math.dart';
 import 'calendar/holiday_table.dart';
+import 'calendar/lunar_math.dart';
 import 'calendar/marker_math.dart';
+import 'calendar/resolve_expression.dart';
+import 'calendar/tz_math.dart';
 
 /// **C1 防御**：查询跨度硬上限 90 天；超限报 `ERR_RANGE_TOO_WIDE`，
 /// 不静默截断（避免 Agent 误以为拿到全量）。
@@ -36,6 +45,7 @@ CategoryTool buildSystemPimTool(
   CalendarFeedProvider? feeds,
   CalendarMarkerStore? markers,
   HolidayProvider holidays = cnHolidayBundled,
+  DeviceTimezoneProvider deviceTz = const UtcTimezoneProvider(),
 }) {
   final cat = CategoryTool(
     'system_pim',
@@ -49,13 +59,13 @@ CategoryTool buildSystemPimTool(
   cat.register(_CalendarDateCalcSub(holidays));
   cat.register(_CalendarDateDiffSub(holidays));
   cat.register(_CalendarWorkdaysBetweenSub(holidays));
-  // R 档 · 待 P2 真实源
+  // R 档 · 真实源注入（ICS / 标记存储；缺省 null ⇒ fail-closed）
   cat.register(_CalendarQuerySub(feeds));
   cat.register(_CalendarFeedsSub(feeds));
   cat.register(_CalendarMonthGridSub(markers, holidays));
-  cat.register(_CalendarResolveDateSub());
+  cat.register(_CalendarResolveDateSub(holidays));
   cat.register(_CalendarMarkerListSub(markers, holidays));
-  cat.register(_CalendarTzConvertSub());
+  cat.register(_CalendarTzConvertSub(deviceTz));
   // W 档 · 只构造命令
   cat.register(_CalendarSubscribeSub());
   cat.register(_CalendarUnsubscribeSub());
@@ -342,27 +352,44 @@ class _CalendarQuerySub extends SubAction {
       return _err('INVALID_ARGUMENT', err);
     }
     final cap = limit as int;
+    // includeSystem：缺省 true（合并系统日历与 ICS）；显式传入须可解析（不静默兜底）。
+    final bool includeSystem;
+    final rawInclude = params['includeSystem'];
+    if (rawInclude == null) {
+      includeSystem = true;
+    } else {
+      final parsed = parseBool(rawInclude);
+      if (parsed == null) {
+        return _err('INVALID_ARGUMENT',
+            'includeSystem 须为布尔值：$rawInclude');
+      }
+      includeSystem = parsed;
+    }
 
-    final List<CalendarEvent> events;
+    final CalendarQueryResult result;
     try {
-      events = await provider.query(
+      result = await provider.query(
         rangeStart: DateMath.fmt(start),
         rangeEnd: DateMath.fmt(end),
         timezone: params['timezone'] is String ? params['timezone'] as String : null,
         feedIds: _stringList(params['feedIds']),
+        includeSystem: includeSystem,
       );
     } on CalendarFeedException catch (e) {
       // 源层机器码透出（区间超限 / 拉取失败 / 解析失败），不静默返空。
       return _err(e.code, e.message, suggestion: e.suggestion);
     }
 
+    final events = result.events;
     final take = cap == 0 ? events.length : cap;
     return _jsonSuccess(<String, Object?>{
       'success': true,
       'events': events.take(take).map((e) => e.toJson()).toList(),
       'hasMore': events.length > take,
       'timezone': 'UTC',
-      'note': '系统日历源（source: system）尚未实现（P2-⑦）；当前仅返回已订阅的在线 ICS 源',
+      // 子源部分失败显式透出（如系统日历未授权 ERR_CALENDAR_PERMISSION）：
+      // ICS 结果照常返回，但 Agent 必须知道哪些源缺席——不静默降级。
+      'warnings': result.warnings,
     });
   }
 }
@@ -404,10 +431,10 @@ class _CalendarMonthGridSub extends SubAction {
 
   @override
   String get description =>
-      '整月网格（恒定 42 格 = 6 行 × 7 列）：每格含是否工作日、'
-      '节假日 / 调休补班 badge 与当日标记数，供 UI 绘制与整月自省。'
-      'firstDayOfWeek 决定列起始（默认 1 = 周一），避免中 / 欧首日习惯差异导致整列错位；'
-      '农历 / 节气角标待 P2-③ 农历引擎落地后补（该字段直接不出，不出 null 占位）。';
+      '整月网格（恒定 42 格 = 6 行 × 7 列）：每格含农历角标（初一显月名）、'
+      '节气名、是否工作日、节假日 / 调休补班 / 节气 badge 与当日标记数，'
+      '供 UI 绘制与整月自省。firstDayOfWeek 决定列起始（默认 1 = 周一），'
+      '避免中 / 欧首日习惯差异导致整列错位。';
 
   @override
   String get paramSignature =>
@@ -443,20 +470,25 @@ class _CalendarMonthGridSub extends SubAction {
       'days':
           MarkerMath.monthGrid(year, month, firstDayOfWeek, _holidays, expanded),
       'holidayTableVersion': _holidays.version,
-      'note': 'lunar / solar_term 角标待 P2-③ 农历引擎；badge 已覆盖节假日与调休补班',
     });
   }
 }
 
 class _CalendarResolveDateSub extends SubAction {
+  _CalendarResolveDateSub(this._holidays);
+
+  final HolidayProvider _holidays;
+
   @override
   String get name => 'calendar_resolve_date';
 
   @override
   String get description =>
       '相对日期消歧（纯函数）：把 "next_friday" / "today+3" / "q4_start" / '
-      '"lunar:2026-08-15" / "mid_autumn" 等自然语言解析为确定日期，'
-      '杜绝 LLM 自算幻觉。实现内不调用 DateTime.now()，基准日由入参注入。';
+      '"lunar:2026-08-15"（闰月 "lunar:2025-闰6-15"）/ "mid_autumn"（节日别名，'
+      '可带年份如 mid_autumn:2027）等表达式解析为确定公历日期，杜绝 LLM 自算幻觉。'
+      '相对型表达式与不带年份的别名必须传 baseDate（实现内不调用 DateTime.now()，'
+      '基准日由入参显式注入，同输入恒同输出）。';
 
   @override
   String get paramSignature =>
@@ -465,11 +497,32 @@ class _CalendarResolveDateSub extends SubAction {
 
   @override
   Future<SubActionResult> execute(Map<String, Object?> params) async {
-    if (params['expression'] is! String ||
-        (params['expression'] as String).trim().isEmpty) {
-      return _err('MISSING_ARGUMENT', '缺少必填参数 expression（日期表达式）');
+    final base = params['baseDate'] == null
+        ? null
+        : DateMath.parseDate(params['baseDate']);
+    if (params['baseDate'] != null && base == null) {
+      return _err('INVALID_ARGUMENT',
+          "baseDate 须为合法 YYYY-MM-DD：${params['baseDate']}");
     }
-    return _unavailable('农历引擎与节日别名表（日期消歧）');
+    final ResolvedDate resolved;
+    try {
+      resolved = ResolveExpression.resolve(params['expression'], baseDate: base);
+    } on ResolveException catch (e) {
+      return _err(e.code, e.message, suggestion: e.suggestion);
+    } on LunarMathException catch (e) {
+      return _err('INVALID_ARGUMENT', e.message);
+    }
+    final lunar = LunarMath.describe(resolved.date);
+    return _jsonSuccess(<String, Object?>{
+      'success': true,
+      'resolvedDate': DateFmt.fmt(resolved.date),
+      'weekday': '周${'一二三四五六日'[resolved.date.weekday - 1]}',
+      'lunar': lunar.fullText,
+      'solarTerm': ?(lunar.solarTerm.isEmpty ? null : lunar.solarTerm),
+      'isWorkday': DateMath.isWorkday(resolved.date, _holidays),
+      'description': resolved.description,
+      'holidayTableVersion': _holidays.version,
+    });
   }
 }
 
@@ -485,9 +538,10 @@ class _CalendarMarkerListSub extends SubAction {
   @override
   String get description =>
       '查询区间内的重要事件标记（生日 / 纪念日 / 里程碑），按年自动展开各周年实例，'
-      '并给出倒计时天数与周年数；农历标记先对齐到对应公历日再算。'
+      '并给出倒计时天数与周年数；农历标记经农历引擎对齐到对应公历日再展开，'
+      '闰月按标记的 leapPolicy 三策略处理。'
       'daysRemaining 以 rangeStart 为基准日（不用系统当天，保证可重放）；'
-      '平年 02-29 对齐 02-28 并标 approximate；农历标记暂标 lunarPending 不展开。';
+      '平年 02-29 对齐 02-28 并标 approximate。';
 
   @override
   String get paramSignature =>
@@ -514,31 +568,57 @@ class _CalendarMarkerListSub extends SubAction {
       'success': true,
       'markers': MarkerMath.expand(raw, start, end),
       'holidayTableVersion': _holidays.version,
-      'note': 'lunarPending=true 的标记为农历标记，周年对齐待 P2-③ 农历引擎落地',
     });
   }
 }
 
+/// calendar_tz_convert：时区投影 / 世界时钟（F5，P2-② package:timezone 落地）。
 class _CalendarTzConvertSub extends SubAction {
+  _CalendarTzConvertSub(this._deviceTz);
+
+  /// B1 基准链端口（缺省 UTC）：fromTz / toTz 缺省时的回退源。
+  final DeviceTimezoneProvider _deviceTz;
+
   @override
   String get name => 'calendar_tz_convert';
 
   @override
   String get description =>
-      '时区投影 / 世界时钟：把某时刻从 fromTz 投影到 toTz，返回目标时间、'
-      'offset 与 DST 是否生效，避免 Agent 自算夏令时。';
+      '时区投影 / 世界时钟：把某时刻从 fromTz 投影到 toTz，返回目标时间'
+      '（ISO 8601 带显式 offset）、offset 与 DST 是否生效（B3/B4），'
+      '避免 Agent 自算夏令时。datetime 无时区信息时按 fromTz 墙钟解释；'
+      'fromTz / toTz 缺省走 B1 基准链（设备时区，缺省 UTC）。';
 
   @override
   String get paramSignature =>
-      'calendar_tz_convert(datetime: string, fromTz: string, toTz: string) '
-      '[必填: datetime, fromTz, toTz]';
+      'calendar_tz_convert(datetime: string, fromTz?: string, toTz?: string) '
+      '[必填: datetime]';
 
   @override
   Future<SubActionResult> execute(Map<String, Object?> params) async {
-    if (params['fromTz'] is! String || params['toTz'] is! String) {
-      return _err('MISSING_ARGUMENT', '缺少必填参数 fromTz / toTz（IANA 时区名）');
+    final fromName = _optStr(params['fromTz']) ?? _deviceTz.timezone;
+    final toName = _optStr(params['toTz']) ?? _deviceTz.timezone;
+    final tz.Location fromLoc;
+    final tz.Location toLoc;
+    try {
+      fromLoc = TzMath.resolveLocation(fromName);
+      toLoc = TzMath.resolveLocation(toName);
+    } on TzMathException catch (e) {
+      return _err('INVALID_ARGUMENT', e.message,
+          suggestion: 'IANA 时区名如 Asia/Shanghai、America/New_York、UTC');
     }
-    return _unavailable('时区库（package:timezone 待引入）');
+    final DateTime instant;
+    try {
+      instant = TzMath.parseInput(params['datetime'], fromLoc);
+    } on TzMathException catch (e) {
+      return _err('INVALID_ARGUMENT', e.message);
+    }
+    final out = TzMath.project(instant, toLoc);
+    return _jsonSuccess(<String, Object?>{
+      'success': true,
+      'fromTimezone': fromName,
+      ...out,
+    });
   }
 }
 

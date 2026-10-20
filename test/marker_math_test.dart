@@ -1,4 +1,4 @@
-// P2-⑥ 标记周年推演 + 月网格测试（公历部分；农历待 P2-③）。
+// P2-⑥ 标记周年推演 + 月网格测试（P2-③ 起含农历三策略展开与节气角标）。
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -8,6 +8,7 @@ import 'package:good_template/mcp/category_tool_face.dart';
 import 'package:good_template/ports.dart';
 import 'package:good_template/service/calendar_actors.dart';
 import 'package:good_template/service/marker_store.dart';
+import 'package:good_template/tools/calendar/lunar_math.dart';
 import 'package:good_template/tools/calendar/marker_math.dart';
 import 'package:good_template/tools/calendar/holiday_table.dart';
 import 'package:good_template/tools/system_pim_tool.dart';
@@ -124,7 +125,7 @@ void main() {
       expect(out.single.containsKey('approximate'), isFalse);
     });
 
-    test('农历标记：不静默按公历算，标 lunarPending', () {
+    test('农历标记 ignoreLeap：对齐平月，2026 中秋 → 2026-09-25', () {
       final markers = <CalendarMarker>[
         CalendarMarker(
           id: 'mk_5',
@@ -140,8 +141,88 @@ void main() {
         DateTime.utc(2026, 1, 1),
         DateTime.utc(2026, 12, 31),
       );
-      expect(out.single['lunarPending'], isTrue);
-      expect(out.single.containsKey('date'), isFalse); // 不给可能出错的公历日期
+      expect(out, hasLength(1));
+      expect(out.single['date'], '2026-09-25'); // 2026 年中秋（官方历表事实）
+      expect(out.single['anniversaryCount'], 36); // 按农历年 2026 − 1990
+      expect(out.single['ordinalCount'], 37);
+      expect(out.single['isLunar'], isTrue);
+      expect(out.single.containsKey('approximate'), isFalse);
+      expect(out.single.containsKey('lunarPending'), isFalse);
+    });
+
+    test('农历标记 strictLeap（闰月源）：平年不触发、闰年触发', () {
+      // 2025 年闰六月（官方历表事实）。找下一个闰六月年做触发年断言。
+      final leapYear = <int>[
+        for (var y = 2026; y <= 2100; y++)
+          if (LunarMath.leapMonthOf(y) == 6) y
+      ].first;
+      final leapSrc = <CalendarMarker>[
+        CalendarMarker(
+          id: 'mk_6',
+          title: '闰六月生日',
+          originalDate: '2025-闰6-05',
+          baseYear: 2025,
+          category: 'birthday',
+          isLunar: true,
+          leapPolicy: 'strictLeap',
+        ),
+      ];
+      // 平年（2026 无闰六月）：不产生实例
+      expect(
+        MarkerMath.expand(
+            leapSrc, DateTime.utc(2026, 1, 1), DateTime.utc(2026, 12, 31)),
+        isEmpty,
+      );
+      // 闰年：触发且走闰月
+      final out = MarkerMath.expand(
+        leapSrc,
+        DateTime.utc(leapYear, 1, 1),
+        DateTime.utc(leapYear, 12, 31),
+      );
+      expect(out, hasLength(1));
+      expect(out.single['anniversaryCount'], leapYear - 2025);
+    });
+
+    test('农历标记 followRegular（闰月源）：平年回落平月并标 approximate', () {
+      final src = <CalendarMarker>[
+        CalendarMarker(
+          id: 'mk_7',
+          title: '闰六月生日',
+          originalDate: '2025-闰6-05',
+          baseYear: 2025,
+          category: 'birthday',
+          isLunar: true,
+          leapPolicy: 'followRegular',
+        ),
+      ];
+      final out = MarkerMath.expand(
+        src,
+        DateTime.utc(2026, 1, 1),
+        DateTime.utc(2026, 12, 31),
+      );
+      expect(out, hasLength(1)); // 平年仍触发
+      expect(out.single['approximate'], isTrue); // 但显式标 approximate
+      expect(LunarMath.leapMonthOf(2026), 0); // 2026 确无闰六月（对账）
+    });
+
+    test('农历标记解析失败 → lunarParseError 条目（不静默按公历算也不静默丢）', () {
+      final src = <CalendarMarker>[
+        CalendarMarker(
+          id: 'mk_8',
+          title: '坏数据',
+          originalDate: 'not-a-date',
+          baseYear: 2020,
+          category: 'anniversary',
+          isLunar: true,
+        ),
+      ];
+      final out = MarkerMath.expand(
+        src,
+        DateTime.utc(2026, 1, 1),
+        DateTime.utc(2026, 12, 31),
+      );
+      expect(out.single['lunarParseError'], isTrue);
+      expect(out.single.containsKey('date'), isFalse);
     });
   });
 
@@ -178,9 +259,14 @@ void main() {
       expect(cellOf('2026-10-01')['isWorkday'], isFalse);
       expect(cellOf('2026-10-10')['badge'], 'adjusted_workday'); // 调休补班
       expect(cellOf('2026-10-10')['isWorkday'], isTrue);
-      expect(cellOf('2026-10-08')['badge'], 'none'); // 假后首个工作日
+      expect(cellOf('2026-10-08')['badge'], 'solar_term'); // 假后首个工作日，恰逢寒露
+      expect(cellOf('2026-10-08')['solarTerm'], '寒露');
       expect(cellOf('2026-10-08')['isWorkday'], isTrue);
       expect(cellOf('2026-10-11')['isWorkday'], isFalse); // 假后周日
+      expect(cellOf('2026-10-12')['badge'], 'none'); // 真普通日（无假无节气）
+      expect(cellOf('2026-10-12')['isWorkday'], isTrue);
+      // 农历角标：2026-10-01 = 农历八月廿一（中秋 2026-09-25 + 6 天）
+      expect(cellOf('2026-10-01')['lunar'], '廿一');
     });
 
     test('markerCount 计入当日展开实例', () {
@@ -249,7 +335,7 @@ void main() {
           1);
     });
 
-    test('农历标记端到端： lunarPending 透出、不给公历日期', () async {
+    test('农历标记端到端：经农历引擎真实展开为公历实例', () async {
       final store = InMemoryMarkerStore();
       final gateway = CommandGateway();
       registerCalendarActors(gateway, kv: InMemoryKv(), markers: store);
@@ -265,8 +351,10 @@ void main() {
         'rangeStart': '2026-01-01',
         'rangeEnd': '2026-12-31',
       }));
-      expect(list['note'], contains('P2-③'));
-      expect((list['markers'] as List).single['lunarPending'], isTrue);
+      final m = (list['markers'] as List).single;
+      expect(m['date'], '2026-09-25'); // 2026 中秋
+      expect(m['anniversaryCount'], 36);
+      expect(m['isLunar'], isTrue);
     });
 
     test('未注入标记源 → fail-closed（不返回空列表假装没有标记）', () async {

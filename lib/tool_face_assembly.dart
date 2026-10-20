@@ -22,7 +22,9 @@ import 'mcp/tool_face.dart';
 import 'mcp/weather_provider.dart';
 import 'service/amap_http_provider.dart';
 import 'service/calendar_actors.dart';
+import 'service/composite_calendar_provider.dart';
 import 'service/ics_feed_provider.dart';
+import 'service/system_calendar_port.dart';
 import 'service/marker_store.dart';
 import 'service/weather.dart';
 import 'tools/calendar/holiday_table.dart';
@@ -48,15 +50,18 @@ const String kAmapSecret = 'amap_secret';
 /// `math_utility`(3) / `geo`(8) / `weather`(1) / `system_pim`(14，含 5 个 W 档)。
 /// 前三者全 R 档；system_pim 的 W 档由本工厂登记 Actor 后经网关派发。
 ///
-/// 已知缺口（显式 fail-closed，**不是假上线**）：`calendar_resolve_date` 与
-/// `calendar_tz_convert` 分别待农历引擎（P2-③）与 `package:timezone`（P2-②）
-/// 引入；`LocationSensorProvider` 真实实现（geolocator）未接入。
+/// **26 个 action 全部真实可用**：P2-② 时区（`package:timezone`）、P2-③ 农历、
+/// P2-④ ICS 源、P2-⑦ 系统日历源（平台通道）均已落地。唯一外部缺口是
+/// `LocationSensorProvider` 真实实现（geolocator）未接入——`geo_current` /
+/// `geo_compass` 与天气回退链末级据此 fail-closed 返 `PERMISSION_DENIED` /
+/// `ERR_LOCATION_UNAVAILABLE`（非伪造坐标）。
 McpToolFace buildDefaultToolFace({
   required SettingsKv kv,
   LocationSensorProvider? sensor,
   GeoHttpProvider? http,
   WeatherProvider? weather,
   CalendarMarkerStore? markers,
+  SystemCalendarPort? systemCalendar,
   CommandGateway? gateway,
 }) {
   // 定位/磁力计：真实平台实现（geolocator + 权限流）尚未接入，缺省走 Null 实现——
@@ -67,14 +72,18 @@ McpToolFace buildDefaultToolFace({
   final amap = http ?? AmapHttpProvider(() => kv.settingsGet(kAmapWebKey));
   final wx = weather ?? QWeatherProvider(kv, sensor: sensors);
 
-  // 日历域：真实源（ICS 订阅 + 标记存储）+ 写门禁 Actor 登记。
+  // 日历域：真实源（ICS 订阅 + 系统日历 + 标记存储）+ 写门禁 Actor 登记。
   // InMemoryMarkerStore 同时实现读端口与写端口，故可直接喂给两侧。
+  // P2-⑦：ICS 与系统日历经 CompositeCalendarProvider 合并（query 出 warnings）。
   final writeGateway = gateway ?? CommandGateway();
   final markerStore = markers ?? InMemoryMarkerStore();
   final markerWriter = markers is CalendarMarkerWriter
       ? markers as CalendarMarkerWriter
       : markerStore as CalendarMarkerWriter;
-  final ics = IcsFeedProvider(kv);
+  final ics = CompositeCalendarProvider(
+    IcsFeedProvider(kv),
+    system: systemCalendar ?? const MethodChannelSystemCalendarPort(),
+  );
   registerCalendarActors(
     writeGateway,
     kv: kv,

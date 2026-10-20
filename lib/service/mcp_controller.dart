@@ -47,6 +47,7 @@ class McpController extends ChangeNotifier {
   /// app_settings 内部键（服务自身状态，非用户设置项）。
   static const _keyToken = 'mcp_token';
   static const _keyEnabled = 'mcp_enabled';
+
   static const _keyIdentityPrompt = 'identity_prompt';
 
   McpServer? _server;

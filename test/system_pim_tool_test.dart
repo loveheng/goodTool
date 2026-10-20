@@ -263,20 +263,16 @@ void main() {
   });
 
   group('源缺位 fail-closed（standards §1.2，不返回空列表假装查到）', () {
-    // 各 action 的**合法**入参（先过入参校验，才能验证「源缺位」而非「参数缺失」）
+    // 各 action 的**合法**入参（先过入参校验，才能验证「源缺位」而非「参数缺失」）。
+    // resolve_date（纯函数 + 农历引擎）与 tz_convert（bundled tz 库 + B1 缺省）
+    // 自 P2-②/③ 起不再依赖可空源，移出本组（真实行为见「日期消歧 / 时区投影」组）。
     const sourceArgs = <String, Map<String, Object?>>{
       'calendar_query': {'rangeStart': '2026-10-01', 'rangeEnd': '2026-10-07'},
       'calendar_feeds': <String, Object?>{},
       'calendar_month_grid': {'year': 2026, 'month': 10},
-      'calendar_resolve_date': {'expression': 'next_friday'},
       'calendar_marker_list': {
         'rangeStart': '2026-10-01',
         'rangeEnd': '2026-10-07',
-      },
-      'calendar_tz_convert': {
-        'datetime': '2026-10-20T12:00:00+08:00',
-        'fromTz': 'Asia/Shanghai',
-        'toTz': 'UTC',
       },
     };
     for (final entry in sourceArgs.entries) {
@@ -377,14 +373,14 @@ class _FakeHolidays implements HolidayProvider {
 /// 事件源桩（验证注入后 R 档走通）。
 class _FakeFeeds implements CalendarFeedProvider {
   @override
-  Future<List<CalendarEvent>> query({
+  Future<CalendarQueryResult> query({
     required String rangeStart,
     required String rangeEnd,
     String? timezone,
     List<String>? feedIds,
-    int? limit,
+    bool includeSystem = true,
   }) async =>
-      <CalendarEvent>[
+      CalendarQueryResult(<CalendarEvent>[
         CalendarEvent(
           uid: 'uid-1',
           title: '国庆节',
@@ -395,7 +391,7 @@ class _FakeFeeds implements CalendarFeedProvider {
           feedId: 'f1',
           feedName: '节假日',
         ),
-      ];
+      ]);
 
   @override
   Future<List<CalendarFeed>> feeds() async => <CalendarFeed>[

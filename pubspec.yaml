@@ -21,6 +21,11 @@ dependencies:
   flutter_foreground_task: ^11.0.3
   decimal: ^3.2.6
 
+  # 时区归一（calendar.md 时区治理 B 拍板）：纯 Dart，bundled latest.tzf，满足内核不沾 dart:io。
+  timezone: ^0.10.0
+  # 农历 / 节气引擎（P2-③）：纯 Dart 无第三方依赖，1900–2100 公农历双向换算、生肖、节气。
+  lunar: ^1.7.8
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

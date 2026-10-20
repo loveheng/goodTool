@@ -12,7 +12,8 @@
 //   - G2 频控：refresh 最小间隔 30s（KV 记时间戳）+ 单 feed 串行
 //   - D1 固定排序 `start → uid`；G4 事件主键 `feedId:uid` 复合键（跨源防碰撞）
 //   - E 拍板脱敏：`maskPii` 默认开 PII_MASK_PHONE_EMAIL
-// **已知限制（登记待办）**：系统日历源（`source: system`）未实现（P2-⑦，需平台通道）；
+// 系统日历源（`source: system`）已随 P2-⑦ 落地：合并见
+// `composite_calendar_provider.dart`；本类只负责 ICS 单路。
 // TZID / 浮动 ICS 时间按「名义 UTC」不解释 IANA 规则（P2-② 引入 package:timezone 后修正）。
 library;
 
@@ -86,11 +87,12 @@ class IcsFeedProvider implements CalendarFeedProvider {
   }
 
   @override
-  Future<List<CalendarEvent>> query({
+  Future<CalendarQueryResult> query({
     required String rangeStart,
     required String rangeEnd,
     String? timezone,
     List<String>? feedIds,
+    bool includeSystem = true,
   }) async {
     final from = _parseDay(rangeStart);
     final to = _parseDay(rangeEnd);
@@ -130,7 +132,7 @@ class IcsFeedProvider implements CalendarFeedProvider {
       final c = a.start.compareTo(b.start);
       return c != 0 ? c : a.uid.compareTo(b.uid);
     });
-    return List.unmodifiable(out);
+    return CalendarQueryResult(List.unmodifiable(out));
   }
 
   @override

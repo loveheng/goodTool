@@ -181,6 +181,8 @@ class McpBinderService : Service() {
         }
         val ch = MethodChannel(engine.dartExecutor.binaryMessenger, CHANNEL)
         channel = ch
+        // 系统日历平台通道（P2-⑦）：生产 Binder 引擎与 MainActivity 引擎共用同一实现。
+        SystemCalendarChannel.register(engine, applicationContext)
         ch.setMethodCallHandler { call, result ->
             when (call.method) {
                 "ready" -> {

@@ -2,6 +2,11 @@
     <!-- 高德 Web 服务（geo 域 geocode/reverse/search_poi/route/static_map）：
          经 lib/service/amap_http_provider.dart 出网，无此权限 HTTP 请求直接失败。 -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- 系统日历源（calendar_query source: system，P2-⑦）：经 lib/service/
+         system_calendar_port.dart 的 MethodChannel 读 CalendarContract；
+         运行时未授权 → Kotlin 侧 PERMISSION_DENIED → Dart ERR_CALENDAR_PERMISSION
+         （fail-closed，不返回空列表假装无日程）。 -->
+    <uses-permission android:name="android.permission.READ_CALENDAR"/>
     <application
         android:label="good_template"
         android:name="${applicationName}"

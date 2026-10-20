@@ -60,6 +60,31 @@ abstract final class CalendarErr {
 
   /// 标记 id 不存在（日历 warnings 一律明确错误，Agent 无权凭空操作）。
   static const markerNotFound = 'ERR_MARKER_NOT_FOUND';
+
+  /// 系统日历未授权 READ_CALENDAR（P2-⑦：fail-closed，不返回空列表假装无日程）。
+  static const permissionDenied = 'ERR_CALENDAR_PERMISSION';
+}
+
+/// 设备时区端口（calendar.md 时区治理 **B1 基准链**）：
+///
+/// ```
+/// 用户设置 calendar.timezone → 设备时区（本端口）→ UTC
+/// ```
+///
+/// 端口住内核（依赖反转接缝）：真实设备时区由装配件 / 平台层注入；
+/// 无头测试与缺省装配走 [UtcTimezoneProvider]（确定性，F1 纪律）。
+abstract class DeviceTimezoneProvider {
+  /// IANA 时区名（如 `Asia/Shanghai`）。
+  String get timezone;
+}
+
+/// B1 链终值：UTC。无头壳未接入平台时区通道前的缺省——**显式 UTC 而非假装本地**，
+/// 出参 `timezone` 字段回写让 Agent 可知判断依据（与 `holidayTableVersion` 同一口径）。
+class UtcTimezoneProvider implements DeviceTimezoneProvider {
+  const UtcTimezoneProvider();
+
+  @override
+  String get timezone => 'UTC';
 }
 
 /// 节假日与调休条目（F3：版本化表，含 OTA 热更）。
@@ -225,6 +250,69 @@ class CalendarMarker {
       };
 }
 
+// ---------------------------------------------------------------------------
+// 系统日历源端口（P2-⑦ source: system）
+// ---------------------------------------------------------------------------
+
+/// 系统日历原始事件（平台通道回传的**未脱敏**原始视图；数据类住内核，纯 Dart）。
+///
+/// [start] / [end] 由平台层格式化为 ISO 8601：
+/// 全天事件为 `YYYY-MM-DD`（B2 浮当日界，end 已做排他日回退）；定时事件带显式
+/// offset（B3，如 `2026-10-20T08:00:00+08:00`）——时区换算住平台层（设备本地
+/// 时区是唯一事实来源），内核不做二次解释。
+class SystemCalendarRawEvent {
+  const SystemCalendarRawEvent({
+    required this.uid,
+    required this.calendarName,
+    required this.title,
+    required this.start,
+    required this.end,
+    required this.isAllDay,
+    this.location,
+    this.description,
+  });
+
+  /// 事件行 id（`CalendarContract.Instances.EVENT_ID`；同一事件跨天 RRULE
+  /// 会出现多实例，uid 由合并层加日期后缀保证唯一）。
+  final String uid;
+  final String calendarName;
+  final String title;
+  final String start;
+  final String end;
+  final bool isAllDay;
+  final String? location;
+  final String? description;
+}
+
+/// 系统日历读取端口（依赖反转接缝，与 [DeviceTimezoneProvider] 同模式）。
+///
+/// 内核不沾平台 API：真实实现（MethodChannel → CalendarContract）由 service
+/// 层注入；无头测试用桩。实现须 **fail-closed**：未授权 / 引擎缺位时抛
+/// [CalendarFeedException]（code = `ERR_CALENDAR_PERMISSION` /
+/// `ERR_CALENDAR_SOURCE_UNAVAILABLE`），不得返回空列表假装「无日程」。
+abstract class SystemCalendarPort {
+  /// 区间查询（`YYYY-MM-DD`，含首尾日）。
+  Future<List<SystemCalendarRawEvent>> readEvents({
+    required String rangeStart,
+    required String rangeEnd,
+  });
+}
+
+/// 查询结果：事件全量 + 子源 warnings（部分失败显式化，不静默降级）。
+class CalendarQueryResult {
+  const CalendarQueryResult(
+    this.events, {
+    this.warnings = const <Map<String, Object?>>[],
+  });
+
+  /// 全量事件（`start → uid` 排序）。
+  final List<CalendarEvent> events;
+
+  /// 子源失败清单（元素含 `source` / `code` / `message`）。
+  /// 非空时调用方必须原样透出到出参——静默丢弃即降级（ai-sideeffect-guard）。
+  final List<Map<String, Object?>> warnings;
+}
+
 /// 源层失败信号（携带机器码；工具层 / Actor 捕获后转结构化错误，不把堆栈漏给 Agent）。
 class CalendarFeedException implements Exception {
   const CalendarFeedException(this.code, this.message, {this.suggestion});
@@ -241,11 +329,13 @@ abstract class CalendarFeedProvider {
   ///
   /// 返回**全量**（按 `start → uid` 排序）；分页截断与 `hasMore` 由调用方处理
   /// （limit 不进端口——截断语义属于工具层，源层留全量便于二次过滤）。
-  Future<List<CalendarEvent>> query({
+  /// 子源失败以 [CalendarQueryResult.warnings] 显式透出，不静默丢路。
+  Future<CalendarQueryResult> query({
     required String rangeStart,
     required String rangeEnd,
     String? timezone,
     List<String>? feedIds,
+    bool includeSystem = true,
   });
 
   /// 列出系统源与订阅源。
