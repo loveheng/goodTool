@@ -79,8 +79,50 @@ class SubActionResult {
   /// 产出完整 `tools/call` 结果对象；内核只透传、不改写。
   Map<String, Object?> toMcpResult() => {'content': content, 'isError': isError};
 
-  /// 派发层注入 `category.action:` 前缀；子操作只吐裸 code（G1/G5）。
+  /// **G6 Actor 信封派生**：W 档命令 Actor 输出的首条 text 若为
+  /// `{'success': bool, ...}` JSON 信封，则 `isError = !success`。
   ///
+  /// 没有这一步，Actor 里的业务失败（URL 被 SSRF 护栏拒绝、feedId 不存在等）
+  /// 只能体现为文本里的 `success:false`，MCP 顶层 `isError` 仍是 false——
+  /// 客户端据此误判「调用成功」，Agent 可能继续基于失败结果推理（G4 一致性）。
+  /// 非信封输出（历史 / 第三方 Actor）按成功透传，不强行解释。
+  static SubActionResult fromActor(List<Map<String, Object?>> content) {
+    final first = content.isEmpty ? null : content.first;
+    final text = first?['text'];
+    if (text is String) {
+      try {
+        final decoded = jsonDecode(text);
+        if (decoded is Map<String, Object?>) {
+          if (decoded['success'] != false) {
+            return SubActionResult._raw(content: content, isError: false);
+          }
+          // 失败信封：**必须走 structuredError**——若用 `_raw` 构造（errorCode 为
+          // null），withPrefix 会把 `[前缀: UNKNOWN]` 文本**替换掉**原 JSON 信封，
+          // 自愈字段（suggestion 等）随之丢失。structuredError 使 withPrefix 原地
+          // 改写 JSON 内的 code，信封其余字段保真。
+          final rawError = decoded['error'];
+          final errorMap = rawError is Map<String, Object?>
+              ? rawError
+              : <String, Object?>{
+                  'code': 'ACTOR_FAILED',
+                  'message': '命令执行失败'
+                };
+          return SubActionResult.structuredError(
+            errorMap['code'] is String ? errorMap['code'] as String : 'ACTOR_FAILED',
+            errorMap['message'] is String
+                ? errorMap['message'] as String
+                : '命令执行失败',
+            errorMap,
+          );
+        }
+      } on FormatException {
+        // 非信封 JSON：按成功透传（不解释，不猜测）。
+      }
+    }
+    return SubActionResult._raw(content: content, isError: false);
+  }
+
+  /// 派发层注入 `category.action:` 前缀；子操作只吐裸 code（G1/G5）。  ///
   /// 结构化错误（[structuredError]）原地改写 JSON 内 `error.code` 为带前缀版本，
   /// 保留 offset/candidates 等自愈字段；非结构化错误走原 `[前缀:code] msg` 文本。
   SubActionResult withPrefix(String category, String action) {
@@ -133,6 +175,16 @@ abstract class SubAction {
   /// 子操作只构造命令，**禁止自行派发、禁止自行鉴权**（G3）。
   Command buildCommand(Map<String, Object?> params) =>
       throw UnsupportedError('R 档子操作无命令构造');
+
+  /// **G6 W 档前置校验**（可选）：`admits` 通过后、`buildCommand` 之前调用。
+  ///
+  /// 返回非 null ⇒ 以其为最终结果、跳过派发。存在的理由：`buildCommand` 只能
+  /// 返回 [Command]，**无法表达失败**——必填缺失 / URL 护栏拒绝 / 幂等冲突这类
+  /// 可预期失败若塞进行命令构造，只能抛异常，最终被内核兜成散文错误（破坏 D3
+  /// 结构化错误口径）。前置校验让「校验 → 结构化错误」有正规出口。
+  ///
+  /// 只做**入参与格式校验**，不得触达任何写端口。
+  SubActionResult? validate(Map<String, Object?> params) => null;
 }
 
 /// 领域网关：把同类子操作聚合为 1 个公开 MCP 工具。
@@ -208,9 +260,15 @@ class CategoryTool {
       } else if (!gw.admits(action, params)) {
         result = SubActionResult.error(
             'PERMISSION_DENIED', 'Write operation unauthorized');
+      } else if (sub.validate(params) case final SubActionResult invalid) {
+        // G6 前置校验：必填 / URL 护栏 / 幂等预查等可预期失败在此转结构化错误，
+        // 不进入 buildCommand / dispatch（buildCommand 无法表达失败）。
+        result = invalid;
       } else {
-        // 唯一写入口：W 档由网关层统一 dispatch，子操作只构造命令
-        result = SubActionResult.success(
+        // 唯一写入口：W 档由网关层统一 dispatch，子操作只构造命令。
+        // G6：Actor 输出统一为 `{'success': ...}` 信封，isError 由信封派生——
+        // 业务失败（如 URL 被护栏拒绝）对客户端可见，而非只藏在文本里。
+        result = SubActionResult.fromActor(
             await gw.dispatch(sub.buildCommand(params)));
       }
     } else {

@@ -488,11 +488,43 @@ class _CalendarTzConvertSub extends SubAction {
 // W 档（用户委托写）：只构造命令，派发与鉴权由网关层执行（G3 / R7）
 // ---------------------------------------------------------------------------
 
-class _CalendarSubscribeSub extends SubAction {
+/// W 档基类：execute 恒抛（R 档入口对 W 档物理不可达），isWrite 恒 true。
+abstract class _WriteSub extends SubAction {
+  _WriteSub();
+
+  @override
+  bool get isWrite => true;
+
+  @override
+  Future<SubActionResult> execute(Map<String, Object?> params) =>
+      throw UnsupportedError('W 档子操作不得直接 execute');
+}
+
+class _CalendarSubscribeSub extends _WriteSub {
   _CalendarSubscribeSub();
 
   @override
   String get name => 'calendar_subscribe';
+
+  @override
+  SubActionResult? validate(Map<String, Object?> params) {
+    // SSRF / HTTPS 护栏（安全关键，G6 前置）：Actor 内仍会复检一次。
+    final guard = guardCalendarUrl(params['url']);
+    if (!guard.ok) return _err(guard.code!, guard.message!);
+    final refresh = params['refreshMin'];
+    if (refresh != null) {
+      final n = refresh is int ? refresh : int.tryParse('$refresh');
+      if (n == null ||
+          n < calendarMinRefreshMin ||
+          n > calendarMaxRefreshMin) {
+        return _err(
+            'INVALID_ARGUMENT',
+            'refreshMin 须为 $calendarMinRefreshMin~$calendarMaxRefreshMin 分钟：$refresh',
+            suggestion: '默认 $calendarDefaultRefreshMin（12 小时）');
+      }
+    }
+    return null;
+  }
 
   @override
   String get description =>
@@ -504,22 +536,24 @@ class _CalendarSubscribeSub extends SubAction {
       'calendar_subscribe(url: string, name?: string, refreshMin?: int) [必填: url]';
 
   @override
-  bool get isWrite => true;
-
-  @override
-  Future<SubActionResult> execute(Map<String, Object?> params) =>
-      throw UnsupportedError('W 档子操作不得直接 execute');
-
-  @override
   Command buildCommand(Map<String, Object?> params) =>
       CalendarSubscribeCommand(params);
 }
 
-class _CalendarUnsubscribeSub extends SubAction {
+class _CalendarUnsubscribeSub extends _WriteSub {
   _CalendarUnsubscribeSub();
 
   @override
   String get name => 'calendar_unsubscribe';
+
+  @override
+  SubActionResult? validate(Map<String, Object?> params) {
+    final feedId = params['feedId'];
+    if (feedId is! String || feedId.trim().isEmpty) {
+      return _err('MISSING_ARGUMENT', '缺少必填参数 feedId');
+    }
+    return null;
+  }
 
   @override
   String get description =>
@@ -530,18 +564,11 @@ class _CalendarUnsubscribeSub extends SubAction {
   String get paramSignature => 'calendar_unsubscribe(feedId: string) [必填: feedId]';
 
   @override
-  bool get isWrite => true;
-
-  @override
-  Future<SubActionResult> execute(Map<String, Object?> params) =>
-      throw UnsupportedError('W 档子操作不得直接 execute');
-
-  @override
   Command buildCommand(Map<String, Object?> params) =>
       CalendarUnsubscribeCommand(params);
 }
 
-class _CalendarRefreshSub extends SubAction {
+class _CalendarRefreshSub extends _WriteSub {
   _CalendarRefreshSub();
 
   @override
@@ -556,22 +583,58 @@ class _CalendarRefreshSub extends SubAction {
   String get paramSignature => 'calendar_refresh(feedId?: string) [全可选]';
 
   @override
-  bool get isWrite => true;
-
-  @override
-  Future<SubActionResult> execute(Map<String, Object?> params) =>
-      throw UnsupportedError('W 档子操作不得直接 execute');
-
-  @override
   Command buildCommand(Map<String, Object?> params) =>
       CalendarRefreshCommand(params);
 }
 
-class _CalendarMarkerAddSub extends SubAction {
+class _CalendarMarkerAddSub extends _WriteSub {
   _CalendarMarkerAddSub();
 
   @override
   String get name => 'calendar_marker_add';
+
+  @override
+  SubActionResult? validate(Map<String, Object?> params) {
+    final originalDate = params['originalDate'];
+    if (originalDate is! String || originalDate.trim().isEmpty) {
+      return _err('MISSING_ARGUMENT', '缺少必填参数 originalDate');
+    }
+    final full = RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(originalDate.trim());
+    final partial = RegExp(r'^\d{2}-\d{2}$').hasMatch(originalDate.trim());
+    if (!full && !partial) {
+      return _err('INVALID_ARGUMENT',
+          'originalDate 须为 YYYY-MM-DD 或 MM-DD：$originalDate');
+    }
+    if (params['title'] is! String ||
+        (params['title'] as String).trim().isEmpty) {
+      return _err('MISSING_ARGUMENT', '缺少必填参数 title');
+    }
+    final category = params['category'];
+    if (category is! String ||
+        !const {'birthday', 'anniversary', 'milestone'}.contains(category)) {
+      return _err('INVALID_ARGUMENT',
+          'category 须为 birthday | anniversary | milestone：$category');
+    }
+    final baseYearRaw = params['baseYear'];
+    if (baseYearRaw != null) {
+      final n = baseYearRaw is int ? baseYearRaw : int.tryParse('$baseYearRaw');
+      if (n == null) return _err('INVALID_ARGUMENT', 'baseYear 不是合法整数');
+    }
+    if (!full && baseYearRaw == null) {
+      // 「originalDate 是年份单一真相源」：无年份格式必须显式补 baseYear。
+      return _err('MISSING_ARGUMENT',
+          'originalDate 为无年份格式（$originalDate），必须显式传 baseYear');
+    }
+    final leap = params['leapPolicy'];
+    if (leap != null &&
+        (leap is! String ||
+            !const {'ignoreLeap', 'strictLeap', 'followRegular'}
+                .contains(leap))) {
+      return _err('INVALID_ARGUMENT',
+          'leapPolicy 须为 ignoreLeap | strictLeap | followRegular：$leap');
+    }
+    return null;
+  }
 
   @override
   String get description =>
@@ -587,22 +650,24 @@ class _CalendarMarkerAddSub extends SubAction {
       '[必填: originalDate, title, category]';
 
   @override
-  bool get isWrite => true;
-
-  @override
-  Future<SubActionResult> execute(Map<String, Object?> params) =>
-      throw UnsupportedError('W 档子操作不得直接 execute');
-
-  @override
   Command buildCommand(Map<String, Object?> params) =>
       CalendarMarkerAddCommand(params);
 }
 
-class _CalendarMarkerDeleteSub extends SubAction {
+class _CalendarMarkerDeleteSub extends _WriteSub {
   _CalendarMarkerDeleteSub();
 
   @override
   String get name => 'calendar_marker_delete';
+
+  @override
+  SubActionResult? validate(Map<String, Object?> params) {
+    final markerId = params['markerId'];
+    if (markerId is! String || markerId.trim().isEmpty) {
+      return _err('MISSING_ARGUMENT', '缺少必填参数 markerId');
+    }
+    return null;
+  }
 
   @override
   String get description =>
@@ -610,13 +675,6 @@ class _CalendarMarkerDeleteSub extends SubAction {
 
   @override
   String get paramSignature => 'calendar_marker_delete(markerId: string) [必填: markerId]';
-
-  @override
-  bool get isWrite => true;
-
-  @override
-  Future<SubActionResult> execute(Map<String, Object?> params) =>
-      throw UnsupportedError('W 档子操作不得直接 execute');
 
   @override
   Command buildCommand(Map<String, Object?> params) =>

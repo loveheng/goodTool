@@ -60,7 +60,7 @@ updated: 2026-10-20
 | 新功能类型 | 落点域 | 关键约束 |
 |---|---|---|
 | 新 MCP 传输/工具面 | `lib/mcp/` | 内核零改造，只认 `McpToolFace`（`lib/mcp/tool_face.dart`）；新工具实现 `McpToolFace` |
-| 新领域网关 / 子操作 | `lib/tools/`（`library;` 文件，`_SubAction` 私有） | 公入口（`categoryName` + `action` 枚举）/ 私内部（子操作）；依赖注入 Provider，写操作转 `CommandGateway`；契约机械约束见 §3.3 G1–G5 |
+| 新领域网关 / 子操作 | `lib/tools/`（`library;` 文件，`_SubAction` 私有） | 公入口（`categoryName` + `action` 枚举）/ 私内部（子操作）；依赖注入 Provider，写操作转 `CommandGateway`；契约机械约束见 §3.3 G1–G6 |
 | 新写类命令 | `lib/action/` | 必须走 CommandGateway 唯一写入口（R1 前瞻） |
 | 新地理/地图能力 | `lib/geo/` | 纯 Dart 无头，经 `GeoHttpProvider`/`LocationSensorProvider` 端口；坐标归一 WGS-84→GCJ-02 |
 | 新平台/硬件能力 | `lib/service/` + Provider 端口 | 端口实现住 service 层，内核经注入消费（§1.2） |
@@ -159,6 +159,14 @@ final result = sub.isWrite
 **G5 参数宽容解析边界**
 
 `params` 为自由 `object`（省 Token），参数名与类型由 `toSchema()` 自动拼进 `action` 枚举描述（`paramSignature`）。宽容解析（`parseDouble`/`parseInt`/`parseBool`）**只允许出现在子操作入参边界这一层**，一次性转强类型；缺参或不可解析一律返回带 `code` 的 error，**禁止取默认值兜底**（守 §4.2 严禁静默降级）。
+
+**G6 W 档前置校验与 Actor 信封（P2-⑤ 新增）**
+
+- **`buildCommand` 无法表达失败**：它只能返回 `Command`。必填缺失、URL 护栏拒绝、幂等冲突这类**可预期失败**若塞进行命令构造，只能抛异常，最终被内核兜成散文错误（破坏 D3 结构化错误口径）。故 `SubAction` 提供可选 `validate(params) → SubActionResult?`，在 `CategoryTool.call` 中按 `admits → validate → dispatch` 顺序执行：`validate` 返回非 null 即以之为最终结果，跳过派发。
+- **拦截顺序固定为 `admits` 先于 `validate`**：未授权会话不得触达任何入参校验（不泄露「该缺什么参数」这类可枚举信息）。
+- **Actor 输出统一为信封**：`{'success': bool, ...}` 首条 text JSON；失败附 `error: {code, message, suggestion?}`。`SubActionResult.fromActor` 据此派生 `isError = !success`——否则业务失败（如 URL 被 SSRF 护栏拒绝）对客户端表现为「调用成功」。
+- **失败信封必须走 `structuredError` 构造**：`_raw` 构造的 `errorCode` 为 null，`withPrefix` 会把 `[前缀: UNKNOWN]` 文本**替换掉**原 JSON 信封，自愈字段随之丢失（P2-⑤ 实测踩坑，已有单测钉死）。
+- Actor（service 层）仍须对安全关键项（URL 护栏）做**防御性复检**：装配路径若绕过子操作 `validate`，Actor 是最后一道闸。
 
 ## 4. 容错、熔断与降级（Fault Tolerance & Degradation）
 

@@ -13,7 +13,7 @@ epic: calendar
 - [ ] [2026-10-20] (功能) (层:L2) (重:中) P2-② 引入 package:timezone（**等用户确认新依赖**）：补 calendar_tz_convert 真实实现 + B1/B2/B3 时区归一（当前出参 timezone 恒 'UTC' 且纯日期计算无 offset） (src: 用户)
 - [ ] [2026-10-20] (功能) (层:L2) (重:重) P2-③ 引入纯 Dart 农历库（**需用户确认新依赖**，1900–2100 公农历双向 + 节气）：补 calendar_resolve_date / calendar_month_grid / isLunar 标记周年推演（三种 leapPolicy） (src: 用户)
 - [ ] [2026-10-20] (功能) (层:L2) (重:重) P2-④ RFC 5545 ICS 解析（VEVENT / RRULE 展开 / EXDATE / RECURRENCE-ID / STATUS:CANCELLED，C2）+ CalendarFeedProvider 真实源（service 层：webcal 规整、3 跳重定向上限、10s 超时回退缓存、频控 G2） (src: 用户)
-- [ ] [2026-10-20] (功能) (层:L2) (重:中) P2-⑤ 5 个 W 档命令的 Actor 实现（service 层）与 CommandGateway 登记：subscribe 幂等 + SSRF 护栏调用、unsubscribe/refresh 作用域受限（G1）、refresh 最小间隔与单源并发锁（G2）、marker_add/delete 私有 store 读写 (src: 用户)
+- [x] [2026-10-20] (功能) (层:L2) (重:中) P2-⑤ W 档 Actor + 标记存储：新增 lib/service/calendar_actors.dart（5 个 Actor，feed 存 KV、subscribe 幂等 + SSRF 防御性复检、unsubscribe/marker_delete 作用域校验、refresh 在 ICS 未实现时 fail-closed）与 lib/service/marker_store.dart（内存 + SharedPreferences 双实现）；SubAction 增 G6 validate 前置校验钩子 + fromActor 信封派生 isError；refresh 的最小间隔与单源并发锁（G2）随 P2-④ ICS 拉取一并无落 (src: 用户)
 - [ ] [2026-10-20] (功能) (层:L2) (重:中) P2-⑥ 标记存储（markers 私有 store）与周年展开推演（anniversaryCount / daysRemaining / 平年 2-29 对齐 2-28 并标 approximate）+ 2/3 出参脱敏（E 拍板：PII_MASK_PHONE_EMAIL / PII_MASK_LOCATION） (src: 用户)
 - [ ] [2026-10-20] (功能) (层:L1) (重:中) P2-⑦ 设备系统日历读取（Android 日历权限 + 平台通道实现 CalendarFeedProvider 的 system 源）+ 隐私设置 `日程敏感字段过滤` 接入 (src: 用户)
 - [ ] [2026-10-20] (集成) (层:L3) (重:轻) P2-⑧ 全部源就绪后，把 buildSystemPimTool 装配进 lib/tool_face_assembly.dart（届时线级 = 4 域 26 action，与 domain_gateway.md 矩阵闭环）+ index.md 锚点回填 + 门禁复跑 (src: ai)

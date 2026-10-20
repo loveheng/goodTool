@@ -7,6 +7,16 @@
 /// 模式对齐 [WeatherProvider] / [GeoHttpProvider]；契约正文见 `docs/product/calendar.md`。
 library;
 
+/// 订阅源刷新周期下限（分钟）。tools 层前置校验与 service 层 Actor 共用，
+/// 避免两侧魔法数漂移。
+const int calendarMinRefreshMin = 5;
+
+/// 订阅源刷新周期上限（分钟，1 周）。
+const int calendarMaxRefreshMin = 10080;
+
+/// 默认刷新周期（分钟，12 小时）。
+const int calendarDefaultRefreshMin = 720;
+
 /// 结构化错误码（calendar.md D3 枚举）。
 ///
 /// `ERR_CALENDAR_SOURCE_UNAVAILABLE` 为 P1 阶段新增：源未注入时 **fail-closed**
@@ -33,6 +43,9 @@ abstract final class CalendarErr {
 
   /// 端口实现缺位（P1：ICS / 系统日历 / 农历 / 时区源尚未注入）。
   static const sourceUnavailable = 'ERR_CALENDAR_SOURCE_UNAVAILABLE';
+
+  /// 标记 id 不存在（日历 warnings 一律明确错误，Agent 无权凭空操作）。
+  static const markerNotFound = 'ERR_MARKER_NOT_FOUND';
 }
 
 /// 节假日与调休条目（F3：版本化表，含 OTA 热更）。
@@ -220,4 +233,125 @@ abstract class CalendarMarkerStore {
     required String rangeEnd,
     String? category,
   });
+}
+
+/// 标记**写**端口：只给命令 Actor（service 层）用——工具层/子操作不得持有，
+/// 否则写路径绕过 CommandGateway（R1 / G3）。
+abstract class CalendarMarkerWriter {
+  /// 新增标记，返回 `markerId`。
+  ///
+  /// [baseYear] 缺省时从 [originalDate] 的完整年份派生；仅当传入无年份格式
+  /// （`MM-DD`）时调用方必须显式提供（calendar.md「originalDate 为年份单一真相源」）。
+  Future<String> addMarker({
+    required String originalDate,
+    required String title,
+    required String category,
+    int? baseYear,
+    bool isAnnual,
+    bool isLunar,
+    String leapPolicy,
+  });
+
+  /// 删除标记；返回是否确实删除（幂等语义由调用方决定）。
+  Future<bool> deleteMarker(String markerId);
+}
+
+// ---------------------------------------------------------------------------
+// 订阅 URL 护栏（calendar.md「两道硬控制」①，安全关键）
+// ---------------------------------------------------------------------------
+// 住**内核**而非 tools 层：命令 Actor（service 层）也要复用——而 standards §1 里
+// `service` 出向只含 `mcp`/`action`，不得 import `tools`；护栏放内核两侧均可复用。
+//
+// 纪律：URL 必须是**调用方显式传入的参数**，禁止 Agent 自造或「建议」订阅地址；
+// 校验在命令执行器内执行（C3 + SSRF 防护），不在工具层拦完就放行。
+//
+// 内核纯 Dart：刻意**不使用 `dart:io` 的 `InternetAddress`**——地址判定走字符串
+// 与正则即可覆盖 RFC 1918 / 回环 / 链路本地，守住「内核不沾平台 API」。
+
+/// 护栏结论：通过带规整后的 [uri]，拒绝带机器码与说明。
+class UrlGuardResult {
+  const UrlGuardResult.ok(this.uri)
+      : code = null,
+        message = null;
+  const UrlGuardResult.reject(this.code, this.message) : uri = null;
+
+  final Uri? uri;
+  final String? code;
+  final String? message;
+
+  bool get ok => uri != null;
+}
+
+/// 规整并校验订阅 URL：
+/// ① `webcal://` → `https://` 后**强制 HTTPS**，拒绝 `http` 明文回退（C3）；
+/// ② 拒绝回环 / 私网 / 链路本地地址（防 SSRF 拉内网 ICS）。
+UrlGuardResult guardCalendarUrl(Object? raw) {
+  if (raw is! String || raw.trim().isEmpty) {
+    return const UrlGuardResult.reject('MISSING_ARGUMENT', '缺少必填参数 url');
+  }
+  final parsed = Uri.tryParse(raw.trim());
+  if (parsed == null) {
+    return const UrlGuardResult.reject(
+        'ERR_INVALID_URL', 'URL 无法解析：仅接受 https / webcal');
+  }
+  final scheme = parsed.scheme.toLowerCase();
+  final Uri uri;
+  switch (scheme) {
+    case 'webcal':
+      // C3 协议规整：webcal 仅作「这是个日历」的语义标记，传输必须 HTTPS。
+      uri = parsed.replace(scheme: 'https');
+    case 'https':
+      uri = parsed;
+    case 'http':
+      return const UrlGuardResult.reject(
+          'ERR_INVALID_URL', '拒绝明文 http：webcal 已规整为 https，禁止降级回退');
+    default:
+      return UrlGuardResult.reject(
+          'ERR_INVALID_URL', '不支持的协议：$scheme（仅接受 https / webcal）');
+  }
+  if (uri.host.isEmpty) {
+    return const UrlGuardResult.reject('ERR_INVALID_URL', 'URL 缺少主机名');
+  }
+  if (isForbiddenHost(uri.host)) {
+    return UrlGuardResult.reject('ERR_INVALID_URL',
+        '拒绝回环 / 私网 / 链路本地地址（SSRF 护栏）：${uri.host}');
+  }
+  return UrlGuardResult.ok(uri);
+}
+
+/// 回环与私网判定（IPv4 / IPv6 / 主机名）。
+bool isForbiddenHost(String host) {
+  var h = host.toLowerCase().trim();
+  // IPv6 字面量形如 [::1]
+  if (h.startsWith('[') && h.endsWith(']')) h = h.substring(1, h.length - 1);
+
+  if (h == 'localhost' || h.endsWith('.localhost')) return true;
+  if (h == '::1' || h == '0.0.0.0' || h == '::') return true;
+  if (h.startsWith('::ffff:')) return true; // IPv4-mapped，一律按私网处理
+
+  final v4 = RegExp(r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$').firstMatch(h);
+  if (v4 != null) {
+    final o = <int>[
+      int.parse(v4.group(1)!),
+      int.parse(v4.group(2)!),
+      int.parse(v4.group(3)!),
+      int.parse(v4.group(4)!),
+    ];
+    if (o.any((x) => x > 255)) return true; // 非法 IPv4 字面量
+    if (o[0] == 0 || o[0] == 10 || o[0] == 127) return true; // 本网 / 私网 / 回环
+    if (o[0] == 172 && o[1] >= 16 && o[1] <= 31) return true; // 172.16.0.0/12
+    if (o[0] == 192 && o[1] == 168) return true; // 192.168.0.0/16
+    if (o[0] == 169 && o[1] == 254) return true; // 链路本地 169.254.0.0/16
+    return false;
+  }
+
+  if (h.contains(':')) {
+    // IPv6：取首个 hextet 判 fe80::/10（链路本地）与 fc00::/7（唯一本地）。
+    final head = h.split(':').first;
+    final hextet = int.tryParse(head, radix: 16);
+    if (hextet == null) return true;
+    if (hextet >= 0xfe80 && hextet <= 0xfebf) return true;
+    if (hextet >= 0xfc00 && hextet <= 0xfdff) return true;
+  }
+  return false;
 }

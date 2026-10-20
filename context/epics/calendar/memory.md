@@ -24,6 +24,14 @@ last-merge: none
 - 2026-10-20 **S6-P2-① 节假日表落地（14 项单测，flutter test 298 全绿 + analyze 0 + arch-guard 7 条）**：新增 `lib/tools/calendar/holiday_table.dart`——内置 2026 年法定节假日表，**逐字照录国务院办公厅 2025-11-04 通报**（人民网/央广网/央视/中新社四方一致；法定假 33 天 + 调休补班 6 天；七假期 3/9/3/5/3/3/7 天；清明/端午/中秋原文为「放假」故无补班），版本号 `cn-2026.1` 并回写出参；`CnHolidayProvider.fromJson` 提供 **OTA 静态 JSON 同构入口**（ranges 区间展开 + workdays 补班，坏输入抛 `FormatException`）；`buildSystemPimTool` 默认表从 `EmptyHolidayProvider` 切为内置表。
 - **重要含义**：至此 3 个纯计算 R 档的节假日判断**真实可用**（此前仅跳周末）。测试按官方日期逐字断言，并把「工作日判定优先级（调休补班 > 法定假 > 周末）」按具体日期钉死。
 
+- 2026-10-20 **S6-P2-⑤ W 档闭环落地（12 项单测；flutter test 310 全绿 + analyze 0 + arch-guard 7 条）**：5 个 W 档 action 从「只 buildCommand」变成「校验 → 鉴权 → 派发 → 落库」全链路可跑（未装配进线级，仅装配件处可接线）。新增 `lib/service/calendar_actors.dart`（feed 列表存 `SettingsKv`、subscribe 幂等 + Actor 内防御性 SSRF 复检、unsubscribe/marker_delete 作用域错误、refresh 在 ICS 未实现时 fail-closed 不假装成功）与 `lib/service/marker_store.dart`（内存 + SharedPreferences，读/写端口分离）。
+- **关键设计（P2-⑤，均已入 standards §3.3 G6）**：
+  1. **`SubAction.validate` 前置校验钩子**：`buildCommand` 只能返回 `Command`、无法表达失败；必填/护栏/幂等这类可预期失败若塞进行构造只能抛异常，最终被内核兜成散文错误。拦截顺序固定 `admits → validate → dispatch`（未授权不触达入参校验）。
+  2. **Actor 信封约定**：Actor 首条 text 统一为 `{'success': bool, …}` JSON；`SubActionResult.fromActor` 据此派生 `isError = !success`，否则业务失败在 MCP 顶层仍显示成功。
+  3. **踩坑（已修+断言）**：Actor 失败信封**必须走 `structuredError` 构造**——用 `_raw`（`errorCode` 为 null）会让 `withPrefix` 把 `[前缀: UNKNOWN]` 文本**替换掉**整个 JSON 信封，suggestion 自愈字段全丢。marker_delete 二次删除的断言抓到了它。
+  4. **SSRF 护栏上移内核**（`lib/mcp/calendar_provider.dart`）：Actor（service 层）要复检，而 service 出向不含 `tools`；放内核两侧复用。
+  5. **写/读端口分离**：`CalendarMarkerStore` 只读给工具层，`CalendarMarkerWriter` 只给 Actor 持有，物理上防止写路径绕过 CommandGateway。
+
 ## 断点
 - [断点] **尚未装配进 `tool_face_assembly.dart`**——6 个 R 档依赖的源（ICS / 农历 / 时区）与 5 个 W 档的 Actor 均未落地，此时接线等于线级摆 14 个恒失败的工具（与 S5「不假上线」同一纪律）。P2 源就绪后一并装配。
 - [断点] 下一步（P2，按依赖顺序）：① **官方节假日表**导入（本地 bundle + 静态 JSON OTA，F3）；② `package:timezone` 引入（需用户确认新依赖）→ `tz_convert` + B1/B2/B3 时区归一；③ 纯 Dart 农历库引入（需用户确认）→ `resolve_date` / `month_grid` / `isLunar` 标记推演；④ ICS 解析与 RRULE 展开 + `CalendarFeedProvider` 真实源（service 层，含 SSRF 护栏调用、3 跳重定向、10s 超时缓存回退）；⑤ 5 个 W 档命令的 **Actor** 实现与 `CommandGateway` 登记；⑥ 标记存储与脱敏（E 拍板）；⑦ 系统日历读取（Android 权限 + 平台通道）；⑧ 全部就绪后装配 + index.md 锚点。
