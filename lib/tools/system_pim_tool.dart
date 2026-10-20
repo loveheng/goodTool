@@ -20,6 +20,7 @@ import '../mcp/calendar_provider.dart';
 import '../mcp/category_tool_face.dart';
 import 'calendar/date_math.dart';
 import 'calendar/holiday_table.dart';
+import 'calendar/marker_math.dart';
 
 /// **C1 防御**：查询跨度硬上限 90 天；超限报 `ERR_RANGE_TOO_WIDE`，
 /// 不静默截断（避免 Agent 误以为拿到全量）。
@@ -51,9 +52,9 @@ CategoryTool buildSystemPimTool(
   // R 档 · 待 P2 真实源
   cat.register(_CalendarQuerySub(feeds));
   cat.register(_CalendarFeedsSub(feeds));
-  cat.register(_CalendarMonthGridSub());
+  cat.register(_CalendarMonthGridSub(markers, holidays));
   cat.register(_CalendarResolveDateSub());
-  cat.register(_CalendarMarkerListSub());
+  cat.register(_CalendarMarkerListSub(markers, holidays));
   cat.register(_CalendarTzConvertSub());
   // W 档 · 只构造命令
   cat.register(_CalendarSubscribeSub());
@@ -393,16 +394,20 @@ class _CalendarFeedsSub extends SubAction {
 }
 
 class _CalendarMonthGridSub extends SubAction {
-  _CalendarMonthGridSub();
+  _CalendarMonthGridSub(this._markers, this._holidays);
+
+  final CalendarMarkerStore? _markers;
+  final HolidayProvider _holidays;
 
   @override
   String get name => 'calendar_month_grid';
 
   @override
   String get description =>
-      '整月网格（恒定 42 格 = 6 行 × 7 列）：每格含农历角标、是否工作日、'
-      '节假日 / 调休 / 节气 badge 与当日标记数，供 UI 绘制与整月自省。'
-      'firstDayOfWeek 决定列起始（默认 1 = 周一），避免中 / 欧首日习惯差异导致整列错位。';
+      '整月网格（恒定 42 格 = 6 行 × 7 列）：每格含是否工作日、'
+      '节假日 / 调休补班 badge 与当日标记数，供 UI 绘制与整月自省。'
+      'firstDayOfWeek 决定列起始（默认 1 = 周一），避免中 / 欧首日习惯差异导致整列错位；'
+      '农历 / 节气角标待 P2-③ 农历引擎落地后补（该字段直接不出，不出 null 占位）。';
 
   @override
   String get paramSignature =>
@@ -416,8 +421,30 @@ class _CalendarMonthGridSub extends SubAction {
     if (year == null || month == null || month < 1 || month > 12) {
       return _err('INVALID_ARGUMENT', 'year / month 非法（month 取 1~12）：$year-$month');
     }
-    // 月网格需农历 / 节气角标 + 当日标记计数，二者均属 P2。
-    return _unavailable('农历引擎与标记源（月网格）');
+    final firstDayOfWeek = params['firstDayOfWeek'] == null
+        ? 1
+        : parseInt(params['firstDayOfWeek']);
+    if (firstDayOfWeek == null || firstDayOfWeek < 1 || firstDayOfWeek > 7) {
+      return _err('INVALID_ARGUMENT',
+          'firstDayOfWeek 须为 1（周一）~ 7（周日）：${params['firstDayOfWeek']}');
+    }
+    final store = _markers;
+    if (store == null) return _unavailable('标记存储源（月网格）');
+
+    final monthStart = DateTime.utc(year, month, 1);
+    final monthEnd = DateTime.utc(year, month + 1, 0);
+    final markers = await store.list(
+      rangeStart: DateMath.fmt(monthStart),
+      rangeEnd: DateMath.fmt(monthEnd),
+    );
+    final expanded = MarkerMath.expand(markers, monthStart, monthEnd);
+    return _jsonSuccess(<String, Object?>{
+      'success': true,
+      'days':
+          MarkerMath.monthGrid(year, month, firstDayOfWeek, _holidays, expanded),
+      'holidayTableVersion': _holidays.version,
+      'note': 'lunar / solar_term 角标待 P2-③ 农历引擎；badge 已覆盖节假日与调休补班',
+    });
   }
 }
 
@@ -447,7 +474,10 @@ class _CalendarResolveDateSub extends SubAction {
 }
 
 class _CalendarMarkerListSub extends SubAction {
-  _CalendarMarkerListSub();
+  _CalendarMarkerListSub(this._markers, this._holidays);
+
+  final CalendarMarkerStore? _markers;
+  final HolidayProvider _holidays;
 
   @override
   String get name => 'calendar_marker_list';
@@ -455,7 +485,9 @@ class _CalendarMarkerListSub extends SubAction {
   @override
   String get description =>
       '查询区间内的重要事件标记（生日 / 纪念日 / 里程碑），按年自动展开各周年实例，'
-      '并给出倒计时天数与周年数；农历标记先对齐到对应公历日再算。';
+      '并给出倒计时天数与周年数；农历标记先对齐到对应公历日再算。'
+      'daysRemaining 以 rangeStart 为基准日（不用系统当天，保证可重放）；'
+      '平年 02-29 对齐 02-28 并标 approximate；农历标记暂标 lunarPending 不展开。';
 
   @override
   String get paramSignature =>
@@ -471,7 +503,19 @@ class _CalendarMarkerListSub extends SubAction {
           "rangeStart / rangeEnd 须为合法 YYYY-MM-DD"
           "（start=${params['rangeStart']}, end=${params['rangeEnd']}）");
     }
-    return _unavailable('标记存储源（markers）');
+    final store = _markers;
+    if (store == null) return _unavailable('标记存储源（markers）');
+    final raw = await store.list(
+      rangeStart: DateMath.fmt(start),
+      rangeEnd: DateMath.fmt(end),
+      category: _optStr(params['category']),
+    );
+    return _jsonSuccess(<String, Object?>{
+      'success': true,
+      'markers': MarkerMath.expand(raw, start, end),
+      'holidayTableVersion': _holidays.version,
+      'note': 'lunarPending=true 的标记为农历标记，周年对齐待 P2-③ 农历引擎落地',
+    });
   }
 }
 
@@ -707,3 +751,7 @@ Object _capOf(Object? raw) {
   if (n == null || n < 1) return 'limit 须为正整数（缺省不限）';
   return n;
 }
+
+/// 可选字符串入参：空白串按缺失处理（不把 `''` 当有效城市 / 分类）。
+String? _optStr(Object? raw) =>
+    raw is String && raw.trim().isNotEmpty ? raw.trim() : null;
