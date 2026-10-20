@@ -5,4 +5,15 @@ epic: calendar
 ---
 
 # calendar · 域内待办
-- [ ] [2026-10-20] (功能) (层:L2) (重:重) S6 落地 system_pim 分类 14 个 action（calendar_query/feeds/subscribe/unsubscribe/refresh/month_grid/resolve_date/marker_list/marker_add/marker_delete/date_calc/date_diff/workdays_between/tz_convert），含 CalendarFeedProvider + HolidayProvider 端口与 5 个 W 档写门禁 (src: 用户)
+- [x] [2026-10-20] (功能) (层:L2) (重:中) S6-P1a 端口层 lib/mcp/calendar_provider.dart：CalendarFeedProvider / CalendarMarkerStore / HolidayProvider + CalendarEvent / CalendarFeed / CalendarMarker 模型 + 7 个错误码（含新增 ERR_CALENDAR_SOURCE_UNAVAILABLE，P1 fail-closed 用） (src: 用户)
+- [x] [2026-10-20] (功能) (层:L2) (重:中) S6-P1b 纯 Dart 内核：lib/tools/calendar/date_math.dart（成分跨度逐月推进 / 工作日推演 / delta 按 days→months→workdays→hours 顺序 + 月末 clamp）+ lib/tools/calendar/url_guard.dart（webcal→https 强制、拒绝 http 回退、回环与私网 IPv4/IPv6 SSRF 护栏） (src: ai)
+- [x] [2026-10-20] (功能) (层:L3) (重:轻) S6-P1c 命令层 lib/action/calendar_commands.dart：5 个 W 档 Command（命令名 = action 名，供 CategoryTool 网关 admits 校验查找） (src: ai)
+- [x] [2026-10-20] (功能) (层:L2) (重:重) S6-P1d 适配层 lib/tools/system_pim_tool.dart：注册 14 个 action（3 个纯计算 R 档真实可用：date_calc/date_diff/workdays_between；6 个 R 档接 Provider，源未注入 fail-closed 返 ERR_CALENDAR_SOURCE_UNAVAILABLE 级机器码；5 个 W 档只 buildCommand）+ 43 项单测（14 action 对账、W 档门禁真验、纯函数确定性、C1 区间红线、SSRF 护栏） (src: ai)
+- [ ] [2026-10-20] (功能) (层:L2) (重:中) P2-① 官方节假日表导入（本地 bundle + 静态 JSON OTA，F3）：当前 EmptyHolidayProvider 不编造数据，workdays 仅跳过周末；真实表须以国务院年度安排为准（含节假日与调休补班） (src: 用户)
+- [ ] [2026-10-20] (功能) (层:L2) (重:中) P2-② 引入 package:timezone（**需用户确认新依赖**）：补 calendar_tz_convert 真实实现 + B1/B2/B3 时区归一（当前出参 timezone 恒 'UTC' 且纯日期计算无 offset） (src: 用户)
+- [ ] [2026-10-20] (功能) (层:L2) (重:重) P2-③ 引入纯 Dart 农历库（**需用户确认新依赖**，1900–2100 公农历双向 + 节气）：补 calendar_resolve_date / calendar_month_grid / isLunar 标记周年推演（三种 leapPolicy） (src: 用户)
+- [ ] [2026-10-20] (功能) (层:L2) (重:重) P2-④ RFC 5545 ICS 解析（VEVENT / RRULE 展开 / EXDATE / RECURRENCE-ID / STATUS:CANCELLED，C2）+ CalendarFeedProvider 真实源（service 层：webcal 规整、3 跳重定向上限、10s 超时回退缓存、频控 G2） (src: 用户)
+- [ ] [2026-10-20] (功能) (层:L2) (重:中) P2-⑤ 5 个 W 档命令的 Actor 实现（service 层）与 CommandGateway 登记：subscribe 幂等 + SSRF 护栏调用、unsubscribe/refresh 作用域受限（G1）、refresh 最小间隔与单源并发锁（G2）、marker_add/delete 私有 store 读写 (src: 用户)
+- [ ] [2026-10-20] (功能) (层:L2) (重:中) P2-⑥ 标记存储（markers 私有 store）与周年展开推演（anniversaryCount / daysRemaining / 平年 2-29 对齐 2-28 并标 approximate）+ 2/3 出参脱敏（E 拍板：PII_MASK_PHONE_EMAIL / PII_MASK_LOCATION） (src: 用户)
+- [ ] [2026-10-20] (功能) (层:L1) (重:中) P2-⑦ 设备系统日历读取（Android 日历权限 + 平台通道实现 CalendarFeedProvider 的 system 源）+ 隐私设置 `日程敏感字段过滤` 接入 (src: 用户)
+- [ ] [2026-10-20] (集成) (层:L3) (重:轻) P2-⑧ 全部源就绪后，把 buildSystemPimTool 装配进 lib/tool_face_assembly.dart（届时线级 = 4 域 26 action，与 domain_gateway.md 矩阵闭环）+ index.md 锚点回填 + 门禁复跑 (src: ai)
