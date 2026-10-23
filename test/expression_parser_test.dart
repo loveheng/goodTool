@@ -6,8 +6,8 @@ library;
 /// 及「DoS 防御（NESTING_TOO_DEEP）」。仅验证 AST 结构与错误/告警模型，
 /// 数值求值由 S3d 求值器覆盖。
 import 'package:flutter_test/flutter_test.dart';
-import 'package:goodtools/tools/math/expression_lexer.dart';
-import 'package:goodtools/tools/math/expression_parser.dart';
+import 'package:good_template/tools/math/expression_lexer.dart';
+import 'package:good_template/tools/math/expression_parser.dart';
 
 ParseResult parse(String src) =>
     ExpressionParser.parse(ExpressionLexer.lex(src));

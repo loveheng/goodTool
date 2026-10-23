@@ -7,12 +7,11 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:goodtools/action/command_gateway.dart';
-import 'package:goodtools/mcp/category_tool_face.dart';
-import 'package:goodtools/tools/calendar/lunar_math.dart';
-import 'package:goodtools/tools/calendar/resolve_expression.dart';
-import 'package:goodtools/tools/system_pim_tool.dart';
-import 'package:goodtools/tools/calendar/holiday_table.dart';
+import 'package:good_template/action/command_gateway.dart';
+import 'package:good_template/mcp/category_tool_face.dart';
+import 'package:good_template/tools/calendar/lunar_math.dart';
+import 'package:good_template/tools/calendar/resolve_expression.dart';
+import 'package:good_template/tools/system_pim_tool.dart';
 
 void main() {
   Map<String, Object?> jsonOf(SubActionResult r) =>
@@ -146,7 +145,7 @@ void main() {
 
   group('calendar_resolve_date 经工具面', () {
     Future<SubActionResult> call(Map<String, Object?> params) async =>
-        buildSystemPimTool(CommandGateway(), holidays: cnHolidayBundled)
+        buildSystemPimTool(CommandGateway())
             .call('calendar_resolve_date', params);
 
     test('lunar: 表达式 → 公历日 + 农历回显 + 周几（D3 结构化出参）', () async {
@@ -156,7 +155,7 @@ void main() {
       expect(j['resolvedDate'], '2026-09-25');
       expect(j['weekday'], '周五'); // 2026-09-25
       expect(j['lunar'], '2026年八月十五');
-      // 显式注入内置 2026 官方节假日表：中秋 9/25 为法定假 → 非工作日
+      // 默认装配带内置 2026 官方节假日表：中秋 9/25 为法定假 → 非工作日
       expect(j['isWorkday'], isFalse);
       expect(j['holidayTableVersion'], 'cn-2026.1');
       expect(j['description'], isNotNull);

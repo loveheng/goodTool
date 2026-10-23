@@ -3,8 +3,8 @@
 // 覆盖红线：UI 拿**类型化对象**（不碰 MCP 文本信封，R2）；Key 缺失等失败
 // 走结构化信封（带机器码），不静默 null；days / lat-lng 校验与工具面同口径。
 import 'package:flutter_test/flutter_test.dart';
-import 'package:goodtools/mcp/weather_provider.dart';
-import 'package:goodtools/ui_ports/weather_port.dart';
+import 'package:good_template/mcp/weather_provider.dart';
+import 'package:good_template/ui_ports/weather_port.dart';
 
 class _FakeProvider implements WeatherProvider {
   _FakeProvider(this.result);

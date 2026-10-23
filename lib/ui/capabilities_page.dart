@@ -34,15 +34,8 @@ class CapabilitiesPage extends StatelessWidget {
         for (final entry in _entries) ...<Widget>[
           _DomainCard(
             entry: entry,
-            // Flutter 3.47 的 MaterialPageRoute 不再给路由内容包 Material
-            // 祖先，子页面（TextField/FilledButton）需自带 Scaffold，否则
-            // push 即抛 "No Material widget found" 红屏。
-            // AppBar + SafeArea：裸 body 会顶进状态栏（日/月网格贴顶栏）。
             onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => Scaffold(
-                appBar: AppBar(title: Text(entry.title)),
-                body: SafeArea(child: pages[entry.domain]!),
-              ),
+              builder: (_) => pages[entry.domain]!,
             )),
           ),
           SizedBox(height: t.metrics.space12),
@@ -114,27 +107,22 @@ class _DomainCard extends StatelessWidget {
     return SectionCard(
       title: entry.title,
       trailing: const Icon(Icons.chevron_right),
-      // InkWell 必须有 Material 祖先才有 hit-test（release 包 assert 被剥离
-      // 后表现为点击无反应），透明 Material 不改变卡片视觉。
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(t.metrics.radiusMd),
-          child: Padding(
-            // 触控热区 ≥44dp（视觉不变，透明 padding 补足——ui-design §4.4）。
-            padding: EdgeInsets.symmetric(vertical: t.metrics.space8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(entry.summary, style: t.typeScale.compact),
-                SizedBox(height: t.metrics.space4),
-                Text(
-                  entry.dependency,
-                  style: t.typeScale.micro.copyWith(color: t.palette.textMuted),
-                ),
-              ],
-            ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(t.metrics.radiusMd),
+        child: Padding(
+          // 触控热区 ≥44dp（视觉不变，透明 padding 补足——ui-design §4.4）。
+          padding: EdgeInsets.symmetric(vertical: t.metrics.space8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(entry.summary, style: t.typeScale.compact),
+              SizedBox(height: t.metrics.space4),
+              Text(
+                entry.dependency,
+                style: t.typeScale.micro.copyWith(color: t.palette.textMuted),
+              ),
+            ],
           ),
         ),
       ),

@@ -128,7 +128,7 @@ Flutter UI、前台服务、`McpServer` headless 监听严格**同单 OS 进程*
 
 - 分类 = 四大能力域 `geo` / `system_pim` / `math_utility` / `weather`，**分类数 = 4 份能力文档**；
 - `action` 名**原样沿用** `docs/product/*.md` 已定义的原子工具名，**禁止改名、禁止自造**——使「文档表格第一列」与「各分类 `register()` 的 name 列表」成为可机械对账的断言，根除文档/实现双轨；
-- 合计 **27 个**原子动作（geo 8 / calendar 14 / calc 4 / weather 1）。新增 action 必须先补 product 文档，禁止先落地代码再补文档。
+- 合计 **26 个**原子动作（geo 8 / calendar 14 / calc 3 / weather 1）。新增 action 必须先补 product 文档，禁止先落地代码再补文档。
 
 **G2 公共入口 / 私有内部**
 

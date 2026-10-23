@@ -5,7 +5,7 @@ library;
 /// 对应 calculator.md「Sanitizer Pipeline」与「开发顺序门禁」第 2 层：
 /// 预清洗、全角→半角、千分位剥离、币种符规整、to 关键字分割、隐式乘法边界。
 import 'package:flutter_test/flutter_test.dart';
-import 'package:goodtools/tools/math/expression_lexer.dart';
+import 'package:good_template/tools/math/expression_lexer.dart';
 
 List<TokenType> _types(List<Token> ts) => ts.map((t) => t.type).toList();
 
@@ -132,22 +132,6 @@ void main() {
   });
 
   group('Lexer · 内联 to 换算', () {
-    test('换算 作连接字：10 公里 换算 英里 → number unit to unit', () {
-      final r = ExpressionLexer.lex('10 公里 换算 英里');
-      expect(r.ok, isTrue);
-      expect(_types(r.tokens),
-          [TokenType.number, TokenType.unit, TokenType.to, TokenType.unit]);
-      expect(r.tokens[1].text, '公里');
-      expect(r.tokens[3].text, '英里');
-    });
-
-    test('to 后跟 换算 字面：换算 连接字与 to 等价确认', () {
-      final r = ExpressionLexer.lex('320 km/h 换算 m/s');
-      expect(r.ok, isTrue);
-      expect(_types(r.tokens),
-          [TokenType.number, TokenType.unit, TokenType.to, TokenType.unit]);
-    });
-
     test('320 km/h to m/s → number unit to unit', () {
       final r = ExpressionLexer.lex('320 km/h to m/s');
       expect(_types(r.tokens),

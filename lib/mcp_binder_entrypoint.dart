@@ -15,7 +15,7 @@ import 'tool_face_assembly.dart';
 /// 部署点：goodhub 经 `bindService(BIND_AUTO_CREATE)` 拉起原生 `McpBinderService`
 /// （android/app/src/main/kotlin/.../McpBinderService.kt），原生侧创建独立
 /// FlutterEngine 执行本 entrypoint；本 isolate 持有独立 McpServer/存储，经
-/// MethodChannel `goodtools/mcp_binder` 把 `call(json)` 转现有
+/// MethodChannel `good_template/mcp_binder` 把 `call(json)` 转现有
 /// [McpServer.handleJsonRpc]（协议无关，与 HTTP 版同一套 _dispatch）。
 /// 模式照抄 goodshare/shiguang 范本（已验证）；goodhub 契约 thirdconnect.md §1.2.2。
 ///
@@ -32,7 +32,7 @@ import 'tool_face_assembly.dart';
 /// 立回 `{"_async":true}` 占位帧，dispatch 照旧同步返回完整 JSON-RPC 响应字符串，
 /// 由原生 Result 回调经 `IMcpCallback.onEvent` 转发为同 id 终帧——本 isolate 不感知
 /// 切片；dispatch 内任何异常经 MethodChannel error 回调由原生侧兜底成 error 终帧。
-const _kChannel = 'goodtools/mcp_binder';
+const _kChannel = 'good_template/mcp_binder';
 
 @pragma('vm:entry-point')
 void mcpBinderMain() {

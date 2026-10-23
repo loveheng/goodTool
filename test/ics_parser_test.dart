@@ -1,6 +1,6 @@
 // P2-④ 步骤 A：RFC 5545 解析内核测试（C1 截断 / C2 EXDATE+override / D1 固定排序）。
 import 'package:flutter_test/flutter_test.dart';
-import 'package:goodtools/mcp/ics_parser.dart';
+import 'package:good_template/mcp/ics_parser.dart';
 
 void main() {
   IcsParseResult parse(String ics) => IcsParser.parse(ics);

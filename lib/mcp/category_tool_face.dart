@@ -187,30 +187,6 @@ abstract class SubAction {
   SubActionResult? validate(Map<String, Object?> params) => null;
 }
 
-/// 工具可见性范围标记（对齐 SDK 0.2.0 `ToolVisibility`）——**纯声明，非访问控制**。
-///
-/// 只回答「该工具属于哪个曝光分桶」。取值经 [CategoryTool.toSchema] 原样写进
-/// `tools/list` 每个工具对象的 `_meta.goodhub.visibility`，由宿主解析决定如何
-/// 聚合 / 是否收进共享目录；本侧**不据此剔除条目、也不拦截任何 `tools/call`**。
-///
-/// **为何由 Dart 侧下发**：本仓业务逻辑全在 Dart，`McpBinderService.kt` 重写
-/// `handleJsonRpc` 全量接管路由，SDK 的运行时反射派发器扫不到任何 `@McpTool`
-/// 方法（因而也扫不到它的 `visibility` 参数）。`tools/list` 由 [CategoryToolFace]
-/// 产出，故这个标记必须在 Dart 侧自行下发——漏发即宿主按 default-deny 判为私有。
-///
-/// 默认 [private]（default-deny，与 SDK `ToolVisibility.PRIVATE` 同口径）：
-/// 未显式声明的分类一律私有，漏标即最严，**不臆造曝光**。
-enum ToolVisibility {
-  /// 仅本机 / 本地消费，宿主不得收进共享目录。
-  private,
-
-  /// 允许宿主聚合进共享面。
-  shared;
-
-  /// 线级取值（小写短名，与 SDK `ToolVisibility.wireName` 同源）。
-  String get wireName => name;
-}
-
 /// 领域网关：把同类子操作聚合为 1 个公开 MCP 工具。
 ///
 /// 公开面 = `categoryName` + `action` 枚举（每行含 `paramSignature`）；
@@ -219,9 +195,8 @@ class CategoryTool {
   CategoryTool(
     this.categoryName,
     this.categoryDescription,
-    this.commandGateway, {
-    this.visibility = ToolVisibility.private,
-  });
+    this.commandGateway,
+  );
 
   /// MCP 线级工具名。
   final String categoryName;
@@ -235,17 +210,12 @@ class CategoryTool {
   /// 遇到 W 档子操作时才触达本端口（物理上不可能被 R 档执行体穿透）。
   final CommandGateway? commandGateway;
 
-  /// 可见性范围标记（SDK 0.2.0）：随 [toSchema] 下发到 `_meta.goodhub.visibility`，
-  /// 默认 [ToolVisibility.private]（default-deny）。纯声明——不影响本侧派发与
-  /// `tools/list` 条目数，曝光策略归宿主。
-  final ToolVisibility visibility;
-
   final Map<String, SubAction> _subs = {};
 
   /// 登记子操作（package 内部 public，供分类文件跨文件调用）。
   void register(SubAction a) => _subs[a.name] = a;
 
-  /// 生成 1 个 MCP Tool 定义：`action` 枚举 + 自由 `params` 对象 + 可见性标记。
+  /// 生成 1 个 MCP Tool 定义：`action` 枚举 + 自由 `params` 对象。
   ///
   /// G1：参数名与类型经 `paramSignature` 随枚举一起下发给 LLM，兼顾命中率与 Token。
   Map<String, Object?> toSchema() => {
@@ -266,12 +236,6 @@ class CategoryTool {
             },
           },
           'required': ['action'],
-        },
-        // GoodHub 私有扩展（SDK 0.2.0 约定）：纯声明，宿主据此分桶。本侧始终下发
-        // （private 也下发）——与 SDK 一致保持「tools/list 反映能力全集且不臆造
-        // 曝光」，漏节点才等于把判定权交给宿主瞎猜。
-        '_meta': {
-          'goodhub': {'visibility': visibility.wireName},
         },
       };
 

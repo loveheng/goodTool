@@ -110,22 +110,11 @@ class McpController extends ChangeNotifier {
       // VM 测试/平台未就绪时跳过，仅启 HTTP（fail-open，不阻断服务）。
       try {
         await ensureForegroundTaskInit();
-        // startService **不阻塞装配链**：保活服务与 HTTP 就绪无依赖，ColorOS 实测
-        // 该系统往返可拖 5s+（boot-timing 实证，曾让启动页「装配中」多等 5 秒）——
-        // 页面先进，服务后台补启；失败照旧 [DEGRADE] 透出，不静默。
-        unawaited(() async {
-          try {
-            await FlutterForegroundTask.startService(
-              serviceTypes: [ForegroundServiceTypes.dataSync],
-              notificationTitle: 'goodTools · MCP 服务运行中',
-              notificationText:
-                  '仅本机回环（内部调试）；桌面先 adb reverse tcp:$defaultPort tcp:$defaultPort',
-            );
-          } catch (e) {
-            // DEGRADE: [fg_unavailable] 前台服务不可用（VM 测试/平台未就绪）——仅 HTTP 无保活
-            debugPrint('[DEGRADE][fg_unavailable] 前台服务未启动: $e');
-          }
-        }());
+        await FlutterForegroundTask.startService(
+          serviceTypes: [ForegroundServiceTypes.dataSync],
+          notificationTitle: 'goodTools · MCP 服务运行中',
+          notificationText: '仅本机回环（内部调试）；桌面先 adb reverse tcp:$defaultPort tcp:$defaultPort',
+        );
       } catch (e) {
         // DEGRADE: [fg_unavailable] 前台服务不可用（VM 测试/平台未就绪）——仅 HTTP 无保活
         debugPrint('[DEGRADE][fg_unavailable] 前台服务未启动: $e');

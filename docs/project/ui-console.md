@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-10-20
+updated: 2026-10-20 (U5 收尾 · 页面结构演进)
 ---
 
 # goodTools · 控制台 UI（人前端）落地设计
@@ -62,8 +62,8 @@ flowchart TB
 | 子页面 | 落点 | 功能 | 依赖与门 |
 |--------|------|------|----------|
 | 计算器 | `calculator_page.dart` | 表达式求值 + 单位换算；**双轨出参**（格式化串 + 无损 `numeric`） | 纯内核，零依赖恒可用 |
-| 地图 | `geo_page.dart` | **交互地图画布**（`flutter_map` 纯 Dart + 高德 XYZ 瓦片源：手势缩放/点击选点/收藏 Marker/路线 Polyline 叠加，画布零原生依赖零 Key）+ 右侧浮动按钮列（我的位置/放大/缩小/指北重置）+ 底部上滑面板（搜索框常驻 + 五分段功能面：搜索/路线/收藏/测距/纠偏）+ 坐标纠偏（三系同屏）。LBS 经 `GeoLbsPort` **人机同源**（与 MCP 工具面共用同一 `GeoHttpProvider`） | 画布零 Key（decisions.md 2026-10-22：`amap_flutter_map` 退役）；「我的位置」走 geolocator 系统定位（`SystemLocationSensorProvider`，WGS-84 → GCJ-02 归一后落蓝点 + fit，与 MCP `geo_current` 共用单实例）；搜索/路线需 Web Key；纠偏/测距纯内核恒可用；瓦片源非官方承诺接口，失效降级静态图待接（域内待办）；**收藏写经 CommandGateway 用户侧注册表（AI 不可触达）** |
-| 日历 | `calendar_page.dart` | 月格**信息层**（公历大日号 + 农历/节气副行 + 法定节假日「休」/ 调休「班」文字标，**离线、零权限依赖**）+ 某日事件与重要标记**只读快照**；未授权 → 警告卡 + 「去授权」（U12b） | 需 READ_CALENDAR 读事件；**只读**——不提供增删改；农历/节假日来自纯内核 `LunarMath` + `cnHolidayBundled`（2026 年度，2027 待录入） |
+| 地图 | `geo_page.dart` | 坐标纠偏（WGS-84 → GCJ-02 → BD-09 三系同屏）+ 两点测距 | 纯内核，零依赖恒可用 |
+| 日历 | `calendar_page.dart` | 某日事件 + 重要标记**只读快照**；未授权 → 警告卡 + 「去授权」（U12b） | 需 READ_CALENDAR 运行时权限；**只读**——不提供事件/标记增删改（不做日程管理红线） |
 | 天气 | `weather_page.dart` | 城市 / 经纬度 + 天数 → 实时天气 + 逐日预报 + 预警 | 需和风 Key；缺失 → 引导卡跳转设置 Tab 配置 |
 
 **通用纪律**（各子页面共享）：
@@ -89,7 +89,7 @@ flowchart TB
 产品定位规定：**敏感设置仅用户本人在 App 内自设，Agent 经工具写入会被拒**。这需要机制而非文案：
 
 - 新增**用户命令族**（`user_*` 前缀），登记在 `CommandGateway` 的**用户侧注册表**（`registerUser` / `dispatchUser`）。
-- AI 侧注册表（`register`）与用户侧注册表**物理分离**：AI 只能触达 `CategoryTool` 枚举内的 27 个 action，用户命令**不可经 MCP 工具面到达**。
+- AI 侧注册表（`register`）与用户侧注册表**物理分离**：AI 只能触达 `CategoryTool` 枚举内的 26 个 action，用户命令**不可经 MCP 工具面到达**。
 - 用户命令**同样经 `CommandGateway` 派发**（与 MCP 写档同一唯一写入口），但跳过 AI 专属的 `forbiddenKeys` 越权门——该门拦的是 AI，不是用户本人。
 - 写后**回最新快照**（对齐读工具同形状），禁回 `void`。
 
@@ -141,8 +141,3 @@ flowchart TB
 - [2026-10-20] [页面结构]: 用户拍板按域拆子页面——三 Tab 不变（仪表盘/能力/设置），原沙盒单页改为能力 hub + 四域子页面（计算器/日历/地图/天气，push 进入）。红线调和：子页面定位为「能力自验/自用」的只读查询 + 本地计算，**不做日程管理**（不提供事件/标记增删改 UI 入口，写归系统日历与 Agent 侧 W 档）；子页面无写入口，配置写仍只经设置页（R1 单一心智）；hub 不就绪探测（双源避免，探测归仪表盘矩阵与子页面自身）。ui-design.md §3.3 同步
 - [2026-10-20] [SSOT修正]: domain_gateway.md 由 draft 转 active（26 action 全可用）；ui-design.md §1 回写 danger 校准值（暗 Rose 400 / 浅 Rose 700，按 §6 对比度红线）；coding-standards §1 分层矩阵新增 repository / ui_ports / ui 三域（standards §1.4 三处同步）
 - [2026-10-20] [U5收尾]: SecretStore 平台实现定案 Android Keystore 路线——AES-256-GCM 密钥持于 AndroidKeyStore（不可导出），密文 Base64(IV‖密文) 落专用 SharedPreferences 文件（与普通设置物理隔离，复用进程级存储天然获得跨 isolate 可见性，无需自建 IPC）；**不设用户认证**（常驻壳 Agent 须无解锁读凭证；威胁模型=设备物理沦陷超壳边界）；fail-closed：密钥/密文异常透出 `SecretStoreException`，不吞 null 假装未配置。备选 EncryptedSharedPreferences（androidx.security-crypto）否决理由：该库已标记 deprecated 且 MasterKey 封装不透明，不利审计
-- [2026-10-20] [Binder接入]: 插件接入 goodhub-mcp-sdk 拆仓——删自拷 AIDL（契约唯一物理副本改在 SDK 仓 :contract）；`McpBinderService` 由自写 `IMcpChannel.Stub` 改为继承 `GoodHubPluginService` + 重写 `handleJsonRpc` 接管路由（业务层留在 Dart，SDK 反射派发器不适用）+ `onHostCallback` 迁 `registerCallback` + 终帧推送走 SDK `tryEmitEvent`（保住 [DEGRADE] 可观测性）；F1 行为逐字保留；minSdk 由 24 提到 34（SDK 两模块硬要求，低于则 manifest merger 失败）
-- [2026-10-20] [产品决策]: MCP HTTP 调试服务改**手动开启**——启动装配链不再自启（enable 在 ColorOS 上拖 5s+ 实证）；设置页移除「MCP 服务」卡，新增「关于」卡长按进隐藏服务页（启动/停止/重生成令牌 + adb reverse 直连步骤，无 Wi-Fi/LAN 暴露口径）；`enable` 内 startService 改 unawaited 后台补启不阻塞装配
-- [2026-10-21] [交接]: goodhub 宿主侧 BinderTransport 由宿主实现闭环（AIDL 客户端/bindService/DeathRecipient/meta-data/Dart 调用面）；「空名 tool_call」根因实证 = BYOK GLM-5.3-Flash 流式 tool_calls 的 function.name 恒空，插件侧无响应形状适配义务；剩余真前端事项仅 U15 真机 e2e
-- [2026-10-23] [日历信息层]: 月格从「12sp 等宽遥测日号 + 7dp 密度点」升级为「22sp 阅读轨大日号 + 农历/节气副行 + 法定节假日橙色日号 + 调休「班」文字标（§6 双通道：休/班兼文字通道、今日态改底部小圆点形状通道）」；数据面在 `ui_ports/calendar_port.dart` 新增纯 Dart `DayFacts`（`dayFacts`/`monthFacts`），复用 `LunarMath.describe` + `cnHolidayBundled.between`，不依赖系统日历权限（未授权页也不空）；新增 `dayNumber` 排印档（22sp 阅读轨，仅日历域）；节假日色复用既有 `l2Accent`（橙，喜庆强调），不扩调色板。页面外壳（默认切月视图 / 去日期输入 / 手势加速通道）待三拍板点确认后再动
-- [2026-10-23] [日历外壳]: 按拍板落地极简 + 手势形态——默认**月视图**（去掉日独立视图 / TextField / SegmentedButton）；月格单一 `scale` 识别器复用「单指横滑切月」与「双指捏合收缩 → 年视图」；月份标题可点跳年 / 回月（§6 双通道：手势 + 可见箭头 / 标题 / 今天按钮 / 面板把手）；新增「今天」归位键；点日格 → **底部面板同屏展开**当日只读快照（上滑展开 / 下拉收起 / 点把手切换，180ms easeOut 非 Spring）；脱敏说明降级为面板内一行（U12a 保留）；未授权时农历 / 节假日仍离线可见，引导卡退为顶部横幅。日历页成为全仓唯一低密度页（去 SectionCard 容器）

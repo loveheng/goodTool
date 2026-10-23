@@ -54,7 +54,7 @@ class McpServer {
   final Future<String?> Function()? instructionsProvider;
 
   /// 线级对外标识（MCP `serverInfo`）：跟随本 app 包名与版本，勿留模板项目名。
-  static const String serverName = 'goodtools';
+  static const String serverName = 'good_template';
   static const String serverVersion = '0.1.0';
 
   /// 工具调用事件（内核侧吐；UI 侧经 `lib/ui_ports` 订阅，守 R4）。

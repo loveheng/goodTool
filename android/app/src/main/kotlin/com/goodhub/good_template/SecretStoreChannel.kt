@@ -1,4 +1,4 @@
-package com.goodhub.goodtools
+package com.goodhub.good_template
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -41,7 +41,7 @@ import javax.crypto.spec.GCMParameterSpec
  * MissingPluginException（Dart 侧转 SecretStoreErr.unavailable）。
  */
 object SecretStoreChannel {
-    const val NAME = "com.goodhub.goodtools/secret_store"
+    const val NAME = "com.goodhub.good_template/secret_store"
 
     /** Keystore 别名。换别名 = 旧密文全部不可解密，仅重大密钥策略迁移时升版。 */
     private const val KEY_ALIAS = "goodtools_secret_store_v1"

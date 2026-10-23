@@ -50,16 +50,4 @@ class SettingsPort {
       _gateway.dispatchUser(
         UserSetIdentityProfileCommand(<String, Object?>{'text': text}),
       );
-
-  /// 设置非凭证类可读键（如天气数据主机 / 预设城市）；键须在白名单内。
-  Future<UserCommandResult> setSetting({
-    required String key,
-    required String value,
-  }) =>
-      _gateway.dispatchUser(
-        UserSetSettingCommand(<String, Object?>{
-          'key': key,
-          'value': value,
-        }),
-      );
 }

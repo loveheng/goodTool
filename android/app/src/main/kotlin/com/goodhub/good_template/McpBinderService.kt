@@ -1,4 +1,4 @@
-package com.goodhub.goodtools
+package com.goodhub.good_template
 
 import android.os.Handler
 import android.os.Looper
@@ -16,8 +16,8 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 
 /** 端点标识：与 AndroidManifest 的 meta-data 保持一致（值唯一出处，两处共用这组常量）。 */
-private const val SERVER_ID = "goodtools"
-private const val SERVER_TITLE = "GoodTools"
+private const val SERVER_ID = "good_template"
+private const val SERVER_TITLE = "GoodTemplate"
 
 /**
  * 模板本地 Binder 插件服务（server 端，goodhub 契约 thirdconnect.md §1.2.2）。
@@ -33,7 +33,7 @@ private const val SERVER_TITLE = "GoodTools"
  * （连接生命周期 / 挂起队列状态机归 GoodHub 宿主 BinderTransport）。
  *
  * 触达 Dart：持有独立 headless [FlutterEngine]（BIND_AUTO_CREATE 随调随起，满足
- * §1.2.5 随调随起——app 被杀也能被拉起跑 MCP），经 MethodChannel `goodtools/mcp_binder`
+ * §1.2.5 随调随起——app 被杀也能被拉起跑 MCP），经 MethodChannel `good_template/mcp_binder`
  * 调 Dart 后台 entrypoint（[mcpBinderMain]）→ McpServer.handleJsonRpc。
  *
  * **F1（务必保留）**：对**所有 tools/call**（宿主回调已注册时）走 `_async` + onEvent 终帧切片
@@ -227,7 +227,7 @@ class McpBinderService : GoodHubPluginService(SERVER_ID, SERVER_TITLE) {
         engine.dartExecutor.executeDartEntrypoint(
             DartExecutor.DartEntrypoint(
                 loader.findAppBundlePath(),
-                "package:goodtools/mcp_binder_entrypoint.dart",
+                "package:good_template/mcp_binder_entrypoint.dart",
                 ENTRYPOINT,
             ),
         )
@@ -246,7 +246,7 @@ class McpBinderService : GoodHubPluginService(SERVER_ID, SERVER_TITLE) {
     }
 
     companion object {
-        const val CHANNEL = "goodtools/mcp_binder"
+        const val CHANNEL = "good_template/mcp_binder"
         const val ENTRYPOINT = "mcpBinderMain"
 
         /** JSON-RPC error 帧（Binder call 需返回字符串；回显请求 id，见 B3）。 */
@@ -271,7 +271,7 @@ class McpBinderService : GoodHubPluginService(SERVER_ID, SERVER_TITLE) {
             null
         }
 
-        private const val TAG = "GoodToolsBinder"
+        private const val TAG = "GoodTemplateBinder"
 
         /** _async 占位帧（§1.2.2）：call 立即返回，真实终帧经 onEvent 推送。 */
         private fun asyncResultJson(id: Any?): String = JSONObject().apply {

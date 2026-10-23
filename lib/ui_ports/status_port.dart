@@ -139,18 +139,11 @@ class StatusPort {
       state: amapReady ? ReadinessState.ready : ReadinessState.missing,
       detail: amapReady ? '高德 Key 已配置' : '未配置高德 Key（地理动作不可用）',
     ));
-    final qweatherKeyReady = snapshot.isConfigured(SettingsKeys.qweatherKey);
-    final qweatherHostReady =
-        snapshot.plainValues.containsKey(SettingsKeys.qweatherHost);
-    final qweatherReady = qweatherKeyReady && qweatherHostReady;
+    final qweatherReady = snapshot.isConfigured(SettingsKeys.qweatherKey);
     items.add(ReadinessItem(
-      label: '天气',
+      label: '天气 Key',
       state: qweatherReady ? ReadinessState.ready : ReadinessState.missing,
-      detail: qweatherReady
-          ? '和风 Key 与 Host 已配置'
-          : !qweatherKeyReady
-              ? '未配置和风 Key（天气动作不可用）'
-              : '未配置和风账号专属 Host（2024 起必填，天气动作不可用）',
+      detail: qweatherReady ? '和风 Key 已配置' : '未配置和风 Key（天气动作不可用）',
     ));
     return items;
   }

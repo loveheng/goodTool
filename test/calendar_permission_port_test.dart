@@ -4,15 +4,15 @@
 // 一律机器码透出，不假装已授权；`CalendarPort.requestPermission` 三态类型化。
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:goodtools/mcp/calendar_provider.dart';
-import 'package:goodtools/repository/marker_repository.dart';
-import 'package:goodtools/service/calendar_permission_port.dart';
-import 'package:goodtools/service/marker_store.dart';
-import 'package:goodtools/ui_ports/calendar_port.dart';
+import 'package:good_template/mcp/calendar_provider.dart';
+import 'package:good_template/repository/marker_repository.dart';
+import 'package:good_template/service/calendar_permission_port.dart';
+import 'package:good_template/service/marker_store.dart';
+import 'package:good_template/ui_ports/calendar_port.dart';
 
 /// 与 `kSystemCalendarChannel` 同名（mock 按通道名生效）。
 const MethodChannel _kCalendarChannel =
-    MethodChannel('com.goodhub.goodtools/calendar');
+    MethodChannel('com.goodhub.good_template/calendar');
 
 class _FakePermission implements CalendarPermissionPort {
   _FakePermission(this.outcome);

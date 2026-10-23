@@ -9,9 +9,8 @@ import '../service/mcp_controller.dart';
 import '../ui_ports/settings_port.dart';
 import '../ui_ports/status_port.dart';
 import 'components/app_components.dart';
-import 'mcp_service_page.dart';
 
-/// 设置页：敏感设置自决 + 「关于」长按隐藏入口（MCP 调试服务控制）。
+/// 设置页：MCP 服务控制 + 敏感设置自决。
 ///
 /// **写路径纪律**：所有设置写经 `SettingsPort` → `CommandGateway` 的**用户侧注册表**
 /// （`user_*` 命令）——与 MCP 写档同一唯一写入口，但 AI 不可触达（R1 + 信任模型）。
@@ -33,7 +32,6 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   final _amapKey = TextEditingController();
   final _qweatherKey = TextEditingController();
-  final _qweatherHost = TextEditingController();
   final _identity = TextEditingController();
 
   UserSettingsSnapshot? _snapshot;
@@ -52,7 +50,6 @@ class _SettingsPageState extends State<SettingsPage> {
   void dispose() {
     _amapKey.dispose();
     _qweatherKey.dispose();
-    _qweatherHost.dispose();
     _identity.dispose();
     super.dispose();
   }
@@ -63,8 +60,6 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() {
       _snapshot = snapshot;
       _identity.text = snapshot.identityPrompt ?? '';
-      // 非凭证明文键：可直接回显当前值（不掩码）。
-      _qweatherHost.text = snapshot.plainValues[SettingsKeys.qweatherHost] ?? '';
       _loading = false;
     });
   }
@@ -79,9 +74,6 @@ class _SettingsPageState extends State<SettingsPage> {
         // 凭证写后不回显明文——清空输入框，避免明文留在界面与输入法历史。
         _amapKey.clear();
         _qweatherKey.clear();
-        // 非凭证明文键：回显最新值（写后可能已清空）。
-        _qweatherHost.text =
-            _snapshot?.plainValues[SettingsKeys.qweatherHost] ?? '';
       } else {
         _feedback = '${result.errorCode}：${result.message ?? ''}';
         _feedbackIsError = true;
@@ -100,14 +92,6 @@ class _SettingsPageState extends State<SettingsPage> {
     _report(result);
   }
 
-  Future<void> _savePlainSetting(String key, String value) async {
-    setState(() => _saving = true);
-    final result = await widget.port.setSetting(key: key, value: value);
-    if (!mounted) return;
-    setState(() => _saving = false);
-    _report(result);
-  }
-
   Future<void> _toggleSwitch(String key, bool enabled) async {
     final result = await widget.port.setPrivacySwitch(key: key, enabled: enabled);
     _report(result);
@@ -121,16 +105,10 @@ class _SettingsPageState extends State<SettingsPage> {
     _report(result);
   }
 
-  /// 隐藏入口：长按「关于」进 MCP 调试服务控制页。
-  void _openServicePage() {
-    Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => McpServicePage(controller: widget.controller),
-    ));
-  }
-
   @override
   Widget build(BuildContext context) {
     final t = tokensOf(context);
+    final service = widget.controller;
     return ListView(
       padding: EdgeInsets.all(t.metrics.space16),
       children: <Widget>[
@@ -138,9 +116,60 @@ class _SettingsPageState extends State<SettingsPage> {
           _FeedbackBanner(message: _feedback!, isError: _feedbackIsError),
           SizedBox(height: t.metrics.space16),
         ],
-        // MCP HTTP 调试服务控制收进隐藏页（2026-10-20 产品决策：不随启动自启，
-        // 仅 adb 直连）——设置页只留「关于」长按入口，控制面不暴露在日常视线里。
-        _AboutCard(onOpenService: _openServicePage),
+        SectionCard(
+          title: 'MCP 服务',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Wrap(
+                spacing: t.metrics.space8,
+                runSpacing: t.metrics.space8,
+                children: <Widget>[
+                  TelemetryText(service.running ? '运行中' : '已停止',
+                      color: service.running
+                          ? t.palette.l1Ok
+                          : t.palette.terminalMuted),
+                  TelemetryText('端口 ${service.port}'),
+                  TelemetryText(service.endpoint),
+                ],
+              ),
+              SizedBox(height: t.metrics.space8),
+              Wrap(
+                spacing: t.metrics.space8,
+                children: <Widget>[
+                  FilledButton(
+                    onPressed: () async {
+                      await service.enable();
+                      if (mounted) setState(() {});
+                    },
+                    child: const Text('启动'),
+                  ),
+                  OutlinedButton(
+                    onPressed: () async {
+                      await service.disable();
+                      if (mounted) setState(() {});
+                    },
+                    child: const Text('停止'),
+                  ),
+                  OutlinedButton(
+                    onPressed: () async {
+                      await service.regenerateToken();
+                      if (mounted) setState(() {});
+                    },
+                    child: const Text('重生成令牌'),
+                  ),
+                ],
+              ),
+              if (service.lastError != null) ...<Widget>[
+                SizedBox(height: t.metrics.space8),
+                Text(
+                  '上次错误：${service.lastError}',
+                  style: t.typeScale.compact.copyWith(color: t.palette.danger),
+                ),
+              ],
+            ],
+          ),
+        ),
         SizedBox(height: t.metrics.space16),
         SectionCard(
           title: '地图厂商 API Key',
@@ -166,24 +195,6 @@ class _SettingsPageState extends State<SettingsPage> {
             masked: _snapshot?.credentialMasked[SettingsKeys.qweatherKey] ?? '',
             onSave: (value) => _saveApiKey('qweather', value),
             onClear: () => _saveApiKey('qweather', ''),
-            saving: _saving,
-          ),
-        ),
-        SizedBox(height: t.metrics.space16),
-        SectionCard(
-          title: '天气数据主机（2024 起必填）',
-          child: _PlainKeySection(
-            controller: _qweatherHost,
-            hint: '账号专属 Host，如 xxxx.re.qweatherapi.com',
-            configured: _snapshot?.plainValues
-                    .containsKey(SettingsKeys.qweatherHost) ??
-                false,
-            current: _snapshot?.plainValues[SettingsKeys.qweatherHost] ?? '',
-            onSave: (value) => _savePlainSetting(
-              SettingsKeys.qweatherHost,
-              value,
-            ),
-            onClear: () => _savePlainSetting(SettingsKeys.qweatherHost, ''),
             saving: _saving,
           ),
         ),
@@ -242,35 +253,6 @@ class _SettingsPageState extends State<SettingsPage> {
           Text('读取设置中…', style: t.typeScale.body),
         ],
       ],
-    );
-  }
-}
-
-/// 「关于」卡：版本信息 + **长按**进 MCP 调试服务控制页（隐藏入口，普通点按无反应）。
-class _AboutCard extends StatelessWidget {
-  const _AboutCard({required this.onOpenService});
-
-  final VoidCallback onOpenService;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = tokensOf(context);
-    return SectionCard(
-      title: '关于',
-      child: GestureDetector(
-        onLongPress: onOpenService,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text('goodTools', style: t.typeScale.listItem),
-            SizedBox(height: t.metrics.space4),
-            Text(
-              '长按本卡片进入 MCP 调试服务控制（仅调试用，adb 直连）',
-              style: t.typeScale.micro.copyWith(color: t.palette.textMuted),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -354,84 +336,6 @@ class _ApiKeySection extends StatelessWidget {
         TextField(
           controller: controller,
           obscureText: true,
-          decoration: InputDecoration(labelText: hint),
-        ),
-        SizedBox(height: t.metrics.space8),
-        Wrap(
-          spacing: t.metrics.space8,
-          children: <Widget>[
-            FilledButton(
-              onPressed: saving ? null : () => onSave(controller.text),
-              child: const Text('保存'),
-            ),
-            if (configured)
-              OutlinedButton(
-                onPressed: saving ? null : onClear,
-                child: const Text('清除'),
-              ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-/// 非凭证明文键输入段（如天气数据主机）：可回显当前值，不掩码、不明文隐藏。
-class _PlainKeySection extends StatelessWidget {
-  const _PlainKeySection({
-    required this.controller,
-    required this.hint,
-    required this.configured,
-    required this.current,
-    required this.onSave,
-    required this.onClear,
-    required this.saving,
-  });
-
-  final TextEditingController controller;
-  final String hint;
-  final bool configured;
-  final String current;
-  final ValueChanged<String> onSave;
-  final VoidCallback onClear;
-  final bool saving;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = tokensOf(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Row(
-          children: <Widget>[
-            StatusDot(
-              state: configured
-                  ? ReadinessState.ready
-                  : ReadinessState.missing,
-            ),
-            SizedBox(width: t.metrics.space4),
-            Expanded(
-              child: Text(
-                configured ? '已配置：$current' : '未配置',
-                style: t.typeScale.compact.copyWith(
-                  color: configured ? t.palette.l1Ok : t.palette.terminalMuted,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-        SizedBox(height: t.metrics.space4),
-        Text(
-          '和风公共域名（devapi / api / geoapi）自 2024 年起已全线停用'
-          '（403 Invalid Host / 404 空体），须填账号专属 Host（控制台「项目管理」'
-          '复制，形如 xxxx.re.qweatherapi.com），它同时服务天气与 GeoAPI 城市解析。'
-          '粘贴带 https:// 或尾部斜杠会被自动归一为纯主机名。',
-          style: t.typeScale.micro.copyWith(color: t.palette.textMuted),
-        ),
-        SizedBox(height: t.metrics.space8),
-        TextField(
-          controller: controller,
           decoration: InputDecoration(labelText: hint),
         ),
         SizedBox(height: t.metrics.space8),

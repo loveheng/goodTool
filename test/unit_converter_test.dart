@@ -5,8 +5,8 @@ library;
 /// 对应 calculator.md「开发顺序门禁」第 1 层与附录 A 修正骨架：
 /// linear / affine / reciprocal / iec_si 四类 + reciprocal 跨制反比。
 import 'package:flutter_test/flutter_test.dart';
-import 'package:goodtools/tools/math/unit_converter.dart';
-import 'package:goodtools/tools/math/unit_registry.dart';
+import 'package:good_template/tools/math/unit_converter.dart';
+import 'package:good_template/tools/math/unit_registry.dart';
 
 void main() {
   const conv = UnitConverter();

@@ -21,8 +21,7 @@ class SettingsKeys {
   /// 和风天气 API Key。
   static const String qweatherKey = 'qweather_key';
 
-  /// 和风天气 API Host（**账号专属**，形如 `xxxx.re.qweatherapi.com`；
-  /// 公共域名自 2024 年起全线停用，故本项必填）。
+  /// 和风天气数据主机（免费版 `devapi` 与商业版 `api` 不同）。
   static const String qweatherHost = 'qweather_host';
 
   /// 用户身份画像（拼进 MCP 系统提示词）。
@@ -36,10 +35,6 @@ class SettingsKeys {
 
   /// 模糊定位开关（`'1'` 开 / `'0'` 关）。
   static const String privacyBlurLocation = 'privacy_blur_location';
-
-  /// 计算器草稿台内容（各块单行文本以 `\n` 连接；UI 会话态，非设置项——
-  /// 不进 userWritable/回显枚举，仅 `user_save_draft` 命令写）。
-  static const String calculatorDraft = 'calculator_draft';
 
   /// 全部**用户可在设置页改写**的键。
   static const List<String> userWritable = <String>[

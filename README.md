@@ -1,4 +1,4 @@
-# goodtools
+# good_template
 
 A new Flutter project.
 

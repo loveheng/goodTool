@@ -8,13 +8,6 @@
          （fail-closed，不返回空列表假装无日程）。 -->
     <uses-permission android:name="android.permission.READ_CALENDAR"/>
 
-    <!-- 定位权限（geo 域「当前定位/指南针」经 LocationSensorProvider 平台实现；
-         真实传感器实现（geolocator）接入时运行时授权由系统弹窗触发，
-         缺权限时内核 fail-closed 返 PERMISSION_DENIED，不返回伪造坐标）。
-         网络出图（高德 REST + 画布 XYZ 瓦片）只需 INTERNET，勿删。 -->
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-
     <!-- goodhub 本地 Binder 插件契约（thirdconnect.md §1.2.2 / §9.3）：本插件以
          `McpBinderService`（action=`com.zzh.goodhub.action.MCP_SERVER` + meta-data
          SERVER_ID/SERVER_TITLE 暴露）供宿主跨 app bind。bind 受 `signature` 权限护门，
@@ -26,7 +19,7 @@
         android:protectionLevel="signature" />
 
     <application
-        android:label="goodTools"
+        android:label="good_template"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
@@ -61,7 +54,7 @@
              发现靠 intent action + SERVER_ID/SERVER_TITLE meta-data（§9.3 非包名约定）。
              新 app 接入时改 SERVER_ID/SERVER_TITLE 为自己的标识。 -->
         <service
-            android:name="com.goodhub.goodtools.McpBinderService"
+            android:name="com.goodhub.good_template.McpBinderService"
             android:exported="true"
             android:permission="com.zzh.goodhub.permission.MCP_SERVER">
             <intent-filter>
@@ -69,10 +62,10 @@
             </intent-filter>
             <meta-data
                 android:name="com.zzh.goodhub.SERVER_ID"
-                android:value="goodtools" />
+                android:value="good_template" />
             <meta-data
                 android:name="com.zzh.goodhub.SERVER_TITLE"
-                android:value="GoodTools" />
+                android:value="GoodTemplate" />
         </service>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

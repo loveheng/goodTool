@@ -16,13 +16,6 @@ abstract final class WeatherErr {
   /// HTTP/Body `401`/`402`/`403`：Key 无效、额度透支、Host 错配、无接口权限。
   static const unauthorized = 'ERR_WEATHER_UNAUTHORIZED';
 
-  /// 未配置和风账号专属 API Host（2024 起公共 devapi/api 域名已停用返回 403）。
-  static const hostMissing = 'ERR_WEATHER_HOST_MISSING';
-
-  /// 账号专属 Host 无效或该 Host 未开通目标 API（和风 403 `Invalid Host` /
-  /// 404「服务不可访问」等文案）——与「Key 无效」区分开，便于走「去改 Host」自愈。
-  static const hostInvalid = 'ERR_WEATHER_HOST_INVALID';
-
   /// GeoAPI 查无此城，或天气 Body `code:"404"` 无该地点数据。
   static const cityNotFound = 'ERR_CITY_NOT_FOUND';
 

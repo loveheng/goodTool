@@ -1,4 +1,4 @@
-package com.goodhub.goodtools
+package com.goodhub.good_template
 
 import android.annotation.SuppressLint
 import android.content.ContentUris
@@ -25,7 +25,7 @@ import java.util.TimeZone
  *    offset 的 ISO 8601（B3），内核不做二次解释。
  */
 object SystemCalendarChannel {
-    const val NAME = "com.goodhub.goodtools/calendar"
+    const val NAME = "com.goodhub.good_template/calendar"
     private const val METHOD_QUERY_EVENTS = "queryEvents"
 
     /** U12b：运行时权限申请入口（未授权 → 跳转应用详情设置页引导授予）。 */

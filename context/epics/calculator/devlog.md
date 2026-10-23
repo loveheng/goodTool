@@ -2,10 +2,9 @@
 dev-loop: devlog
 format: v1
 epic: calculator
-total-merged: 1
-last-merge: 2026-10-22
+total-merged: 0
+last-merge: none
 ---
-- [2026-10-22] [变更]: 草稿台长公式自适应换行修复：输入框 maxLines 1 → minLines 1/maxLines null（折行撑高块体，不再横向滚动，对齐 calculator.md「单行/多行自动微撑高」设计）；回车跳块（textInputAction.next→onSubmitted）不变；新增 _NoNewlineFormatter 接管「块内容恒单行文本」不变式（框架对 maxLines null 不再滤 \n，硬件回车直插路径由此拦截，evalLine 单行口径与粘贴裂变按行拆块依赖不变）
-- [2026-10-22] [验证]: flutter analyze 0 issue；flutter test 521 全绿；arch-guard 7 条全过
-- [2026-10-22] [变更]: 输入中瞬态错误抑制：新增 pending 分类（UNEXPECTED_TOKEN / UNDEFINED_VARIABLE 纯击键中间态），结果位淡灰「输入中…」替代红色机器码（对齐 calculator.md「轻量容错呈现」）；上游输入中时下游 UPSTREAM_ERROR 级联同步转输入中态（级联不闪红）；真故障（INVALID_CHARS/DIVISION_BY_ZERO/UNKNOWN_UNIT 等）仍红色机器码圈定；既有上游故障用例改非法字符构造真故障，新增输入中抑制 widget 用例
-- [2026-10-22] [验证]: flutter analyze 0 issue；flutter test 522 全绿（新增输入中抑制用例 + 上游故障用例重构）；arch-guard 7 条全过
+- [2026-10-20] [变更]: S3d 完成：新增 lib/tools/math/expression_evaluator.dart + test/expression_evaluator_test.dart + 引入 decimal 依赖（pubspec）。Evaluator 走 Decimal 主链路（0.1+0.2=0.3 精确、链式不累计误差），超越函数/单位换算因固有非精确走 double 回装 Decimal（设计内非静默降级）；DoS 红线 EVAL_STEP_LIMIT（maxSteps=100000，可注入测试）。修复 decimal 3.2.6 API 坑：① Decimal/Decimal 除法返回 Rational → 须 .toDecimal(scaleOnInfinitePrecision:30)（1/3 类无限精度）；② Decimal.pow(int) 返回 Rational → .toDecimal()；③ Decimal 无 toInt → int.parse(round().toString())；④ math 无 cbrt → 用 pow(a,1/3)。自实现 _intPow 正确处理负底数/负指数（2^-2=0.25、(-2)^3=-8）。
+- [2026-10-20] [验证]: 全链路全绿：flutter analyze → No issues found；flutter test → All tests passed (142)；toolbox run arch-guard → OK（6 条全过）；toolbox run docs-lint → ✓
+- [2026-10-20] [变更]: S3e 完成：新增 lib/tools/math/math_tool.dart + test/math_tool_test.dart（11 项）。建 buildMathTool() 注册 calc_eval/unit_convert/unit_list 三 R 档 SubAction（双轨出参：result 格式化串 + numericValue 无损数值，超限退化为 string；结构化错误携带 offset/candidates/suggestion）。共享契约层同步增强：CategoryTool.commandGateway 改可空（R 档分类传 null，fail-closed）；SubActionResult 新增 structuredError 构造 + withPrefix 在 JSON 错误上原地注入前缀（保留自愈字段，G1/G5 不破），向后兼容。calc_eval 的 context/angleMode 内核暂未支持，以 warning 温和降级（待内核扩展）。analyze/arch-guard 全过。

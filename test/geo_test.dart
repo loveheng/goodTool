@@ -3,11 +3,11 @@
 library;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:goodtools/geo/amap_sign.dart';
-import 'package:goodtools/geo/coord_convert.dart';
-import 'package:goodtools/geo/rdp.dart';
-import 'package:goodtools/geo/static_map_url.dart';
-import 'package:goodtools/mcp/geo_provider.dart';
+import 'package:good_template/geo/amap_sign.dart';
+import 'package:good_template/geo/coord_convert.dart';
+import 'package:good_template/geo/rdp.dart';
+import 'package:good_template/geo/static_map_url.dart';
+import 'package:good_template/mcp/geo_provider.dart';
 
 const beijing = GeoPoint(39.9042, 116.4074); // 境内 WGS-84 近似
 const newYork = GeoPoint(40.7128, -74.0060); // 境外

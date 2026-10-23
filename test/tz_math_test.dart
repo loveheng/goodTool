@@ -3,10 +3,10 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:goodtools/action/command_gateway.dart';
-import 'package:goodtools/mcp/category_tool_face.dart';
-import 'package:goodtools/tools/calendar/tz_math.dart';
-import 'package:goodtools/tools/system_pim_tool.dart';
+import 'package:good_template/action/command_gateway.dart';
+import 'package:good_template/mcp/category_tool_face.dart';
+import 'package:good_template/tools/calendar/tz_math.dart';
+import 'package:good_template/tools/system_pim_tool.dart';
 
 void main() {
   Map<String, Object?> jsonOf(SubActionResult r) =>

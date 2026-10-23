@@ -2,8 +2,8 @@
 dev-loop: memory
 format: v1
 epic: ui-console
-total-merged: 1
-last-merge: 2026-10-21
+total-merged: 0
+last-merge: none
 ---
 
 # ui-console
@@ -38,10 +38,8 @@ last-merge: 2026-10-21
   - **U12a 脱敏接线**：`piiMaskEnabledBy`（`'0'`=关、未设置=开——**保护性缺装**，对齐 E 拍板，未设置行为与接线前一致无回归）；ICS 路每次查询现读（改开关即时生效），系统路经 `CompositeCalendarProvider.maskPiiEnabled` 闭包注入（合并编排不持 KV，tool_face_assembly 与 main.dart 同口径注入防双通道漂移）；设置快照 maskPii 默认态改真（与内核同源）；设置页文案订正（原写「标题」也脱敏——实际只脱敏 location/description）。
   - **页面结构演进**（设计稿先行：ui-console.md §1 调和 + §3 重写 + ui-design.md §3.3 同步 + 决策日志）：三 Tab 改「仪表盘/能力/设置」，沙盒单页退役拆为 hub + 四域子页面（calculator/geo/calendar/weather，push 进入）；hub 不就绪探测（双源避免）；子页面**无写入口**（配置写只经设置页）；新增 `lib/ui_ports/weather_port.dart`（和风 provider → 类型化视图，与工具面**共用同一 QWeatherProvider 实例**，频控/缓存不分裂）；`ShellNav` InheritedWidget 供子页面回跳设置 Tab（天气缺 Key / 日历脱敏说明引导）。**踩坑记账**：capabilities_page 列表字面量误以 `};` 收尾（应为 `];`）——analyze 报错行号指向末元素而非字面量开头，靠最小复现定位。
   - 验证：arch-guard 7/7 + analyze 0 issue + test 437 全绿（新增 3 个测试文件：calendar_privacy_permission / calendar_permission_port / weather_port）+ `compileDebugKotlin` 过；`index.md` 落点表/文档落点同步，coding-standards §1 分层矩阵「沙盒」字样订正。
-- 2026-10-20~21 **Binder/交付链收束**（决策原文归档 ui-console.md 决策日志 [Binder接入]/[产品决策]/[交接]）：goodhub-mcp-sdk 拆仓接入（McpBinderService 继承 GoodHubPluginService、minSdk 34）；MCP HTTP 服务改手动开启（隐藏服务页）；UI 修复组：SectionCard InkWell 缺 Material 祖先、二级页 push 红屏（Flutter 3.47 MaterialPageRoute 不再包 Material）、AIDL buildFeatures 缺失（AGP 9.1 默认关）、Binder entrypoint kernel 缺库（main.dart import 使库进 kernel 闭包）。剩余唯一真前端事项 = U15 真机 e2e（含 Binder 联调；GLM 系待 goodhub 注入 tool_stream 后复验，step-3.7-flash 可先验）
 
 ## 断点
-- [断点] 下一步：U15 真机 e2e：用支持函数调用的模型（step-3.7-flash 实测 100% 有名调用）验收 goodhub→Binder→goodtools__{math_utility,geo,weather,system_pim} 四工具调用链；GLM 系模型待 goodhub 注入 tool_stream 参数后复验
-- **U15 真机侧载核对**（ui-console.md §6 视觉验收项 + Binder e2e）：环境无模拟器，唯一途径，需用户装 debug 包走查四域子页面/权限引导/天气引导/Keystore 凭证持久化（重启不丢 + Binder 通道可见）+ 宿主 Binder 联调。
-- 「拾光排程师」文案残留：待产品定位拍板（`domain_gateway` 域待办，不属本 epic）。
-- **历史查证（已结项）**：goodhub 宿主侧私有注册——goodTools 插件端曾漏声明 `<permission>` 且宿主缺 `<queries>`，两仓 Manifest 已补 `<permission protectionLevel="signature">` + 宿主 `<queries>` 该 action；`thirdconnect.md` 契约文档在 goodTools 仓内仍缺失（仅被引用），待补回或登记避免信息丢失。
+- [断点] ~~U5 收尾~~ ~~U12a~~ ~~U12b~~ ~~域子页面拆分~~ **均已结项**（2026-10-20，见上方进度）。ui-console 计划内功能全部交付，剩余：① **真机侧载核对**（ui-console.md §6 视觉验收项——环境无模拟器，唯一途径，需用户配合装包走查）；② 「拾光排程师」文案残留待产品定位拍板（`domain_gateway` 域待办，不属本 epic）；③ goodhub 宿主侧私有注册问题：**已查因**——goodTools 插件端 `McpBinderService` 标 `android:permission="com.zzh.goodhub.permission.MCP_SERVER"` 却**从未声明 `<permission>`**，且宿主 `goodhub-restored` Manifest 既**未声明该权限**也**无 `<queries>` 查 `com.zzh.goodhub.action.MCP_SERVER`**（API30+ 包可见性缺失 → `queryIntentServices` 必空）。**已修**：两仓 Manifest 各补 `<permission protectionLevel="signature">` + 宿主补 `<queries>` 该 action。
+  - **仍缺（更大缺口，跨工程）**：宿主 `goodhub-restored` 的 **AIDL 客户端 + 本地 Binder 发现/绑定传输层（`bindService`/`queryIntentServices`/`IMcpChannel`/`DeathRecipient`/meta-data 读取）完全不存在**——`LlmBridge.kt` 与 Dart 侧均无，且缺 `*.aidl` 文件；`thirdconnect.md` 契约文档在 goodTools 仓内也缺失（仅被引用）。即"私有注册"的**功能性**一半（宿主发现并 bind 插件）尚未实现。
+  - **待澄清**：`goodhub-recovery-20261011/goodhub-restored` 是否即线上宿主、可否在其内实现该 BinderTransport（AIDL 客户端 + 发现/绑定 + Dart 调用面）；若否，需指明线上 goodhub 落点。该缺口不属本 epic 的代码范围，须跨工程授权。

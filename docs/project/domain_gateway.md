@@ -1,11 +1,11 @@
 ---
 status: active
-updated: 2026-10-21
+updated: 2026-10-20
 ---
 
 # goodTools · 领域网关工具（Domain Gateway Tool）设计 — 分类嵌入模式
 
-> 状态：`active`。本文是「把零散能力聚合为少量领域工具」方案的**落地基线**。契约层 S1–S2 + 四域全部装配（`math_utility` 4 / `geo` 8 / `weather` 1 / `system_pim` 14，共 **27 action，27 个全部真实可用**）并经 `lib/tool_face_assembly.dart` 进入 HTTP 与 Binder 双通道；`CommandGateway` 写门禁随 5 个日历 W 档在生产路径闭环（arch-guard R7 为真门禁）。代码落点以 `docs/project/index.md` 的域级锚点为唯一事实源。
+> 状态：`active`。本文是「把零散能力聚合为少量领域工具」方案的**落地基线**。契约层 S1–S2 + 四域全部装配（`math_utility` 3 / `geo` 8 / `weather` 1 / `system_pim` 14，共 **26 action，26 个全部真实可用**）并经 `lib/tool_face_assembly.dart` 进入 HTTP 与 Binder 双通道；`CommandGateway` 写门禁随 5 个日历 W 档在生产路径闭环（arch-guard R7 为真门禁）。代码落点以 `docs/project/index.md` 的域级锚点为唯一事实源。
 
 ## 背景与动机
 
@@ -78,15 +78,6 @@ abstract class McpToolFace {
 
 这样满足诉求「入口公共、内部私有」：外部只能经由公开的分类工具名 + `action` 枚举调用，无法绕过网关直触某个子操作实现。
 
-## 工具可见性标记（SDK 0.2.0 对齐）
-
-插件 SDK 0.2.0 给 `@McpTool` 增了 `visibility: ToolVisibility`（`PRIVATE` / `SHARED`），由派发器写进 `tools/list` 每个工具对象的 `_meta.goodhub.visibility`。**本仓拿不到这个自动下发**——业务逻辑在 Dart，`McpBinderService.kt` 重写 `handleJsonRpc` 全量接管路由，SDK 反射派发器扫不到任何 `@McpTool` 方法（也扫不到它的注解参数）。故：
-
-- 落点：`CategoryTool` 增 `visibility` 字段（枚举 `ToolVisibility`，`private` / `shared`），`toSchema()` 恒定下发 `'_meta': {'goodhub': {'visibility': <wireName>}}`；
-- **默认值 `private`（default-deny）**，与 SDK `PRIVATE` 同口径：漏标即最严，不臆造曝光；
-- 四个聚合工具（`math_utility` / `geo` / `weather` / `system_pim`）在各自 `buildXxxTool()` 里显式声明 `visibility: ToolVisibility.shared`；
-- **纯声明语义**（同 SDK）：不据此剔除 `tools/list` 条目、不拦截任何 `tools/call`，如何聚合 / 是否收进共享目录全属宿主解析职责；`tools/list` 仍反映能力全集。
-
 ## 能力矩阵映射（四大能力 → 领域网关）
 
 > **裁定（2026-10-20）**：**分类 = 四大能力域**，与 `docs/product/` 四份能力文档一一对应；`action` 名**原样沿用**各文档已定义的原子工具名，**不改名、不自造**。由此「文档表格第一列」与「各分类 `register()` 的 name 列表」成为可机械对账的断言，文档与实现天然单源。
@@ -95,10 +86,10 @@ abstract class McpToolFace {
 |---|---|---|---|
 | **`geo`**（地理与地图，8） | `geo_current`、`geo_geocode`、`geo_reverse`、`geo_search_poi`、`geo_route`、`geo_static_map`、`geo_compass`、`geo_distance` | `LocationSensorProvider` + `GeoHttpProvider`（`lib/mcp/geo_provider.dart`）＋纯 Dart 内核 `lib/geo/` | product/geo.md |
 | **`system_pim`**（日历与标记，14） | `calendar_query`、`calendar_feeds`、`calendar_subscribe`、`calendar_unsubscribe`、`calendar_refresh`、`calendar_month_grid`、`calendar_resolve_date`、`calendar_marker_list`、`calendar_marker_add`、`calendar_marker_delete`、`calendar_date_calc`、`calendar_date_diff`、`calendar_workdays_between`、`calendar_tz_convert` | `CalendarFeedProvider`（待新增，模式对齐 `LocationSensorProvider`）+ `HolidayProvider` + `CommandGateway` | product/calendar.md |
-| **`math_utility`**（计算与换算，4） | `calc_eval`、`unit_convert`、`unit_list`、`list_stats` | 纯 Dart 求值 / 换算内核 | product/calculator.md |
+| **`math_utility`**（计算与换算，3） | `calc_eval`、`unit_convert`、`unit_list` | 纯 Dart 求值 / 换算内核 | product/calculator.md |
 | **`weather`**（天气，1） | `weather_forecast` | `WeatherProvider`（`lib/mcp/weather_provider.dart`）+ `LocationSensorProvider` | product/weather.md |
 
-**合计 27 个 action**（geo 8 / calendar 14 / calc 4 / weather 1）。
+**合计 26 个 action**（geo 8 / calendar 14 / calc 3 / weather 1）。
 
 **写操作标记**：`calendar_subscribe`、`calendar_unsubscribe`、`calendar_refresh`、`calendar_marker_add`、`calendar_marker_delete` 为 W 档（`isWrite: true`），其余为 R 档。构造分类时逐个标注，拦截由网关层统一执行（coding-standards §3.3 G3）。
 

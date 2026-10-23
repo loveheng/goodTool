@@ -72,11 +72,9 @@ class _WeatherPageState extends State<WeatherPage> {
   Widget build(BuildContext context) {
     final t = tokensOf(context);
     final view = _view;
-    final configIncomplete = view != null &&
+    final keyMissing = view != null &&
         !view.ok &&
-        (view.errorCode == WeatherErr.keyMissing ||
-            view.errorCode == WeatherErr.hostMissing ||
-            view.errorCode == WeatherErr.hostInvalid);
+        view.errorCode == WeatherErr.keyMissing;
     final shell = ShellNav.maybeOf(context);
     return ListView(
       padding: EdgeInsets.all(t.metrics.space16),
@@ -128,18 +126,16 @@ class _WeatherPageState extends State<WeatherPage> {
             ],
           ),
         ),
-        if (configIncomplete && shell != null) ...<Widget>[
+        if (keyMissing && shell != null) ...<Widget>[
           SizedBox(height: t.metrics.space16),
           GuidanceCard(
-            message: '和风天气未正确配置',
-            detail: view.errorCode == WeatherErr.hostMissing
-                ? '在设置页填入账号专属 API Host（形如 xxxx.re.qweatherapi.com）后即可查询'
-                : '在设置页填入 Key 后即可查询天气',
+            message: '和风天气 API Key 未配置',
+            detail: '在设置页填入 Key 后即可查询天气',
             actionLabel: '去设置',
             onAction: shell.onOpenSettings,
           ),
         ],
-        if (view != null && !view.ok && !configIncomplete) ...<Widget>[
+        if (view != null && !view.ok && !keyMissing) ...<Widget>[
           SizedBox(height: t.metrics.space16),
           SectionCard(
             title: '查询失败',

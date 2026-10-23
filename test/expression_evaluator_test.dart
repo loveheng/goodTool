@@ -6,7 +6,7 @@ library;
 /// 重点验证 Decimal 主链路精确性（0.1+0.2）、运算符语义、超越函数、
 /// 单位换算、错误码与 EVAL_STEP_LIMIT。
 import 'package:flutter_test/flutter_test.dart';
-import 'package:goodtools/tools/math/expression_evaluator.dart';
+import 'package:good_template/tools/math/expression_evaluator.dart';
 
 /// 解析并求值，返回格式化字符串（便于断言）。
 String evalStr(String src) {

@@ -3,15 +3,15 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:goodtools/action/command_gateway.dart';
-import 'package:goodtools/mcp/calendar_provider.dart';
-import 'package:goodtools/mcp/category_tool_face.dart';
-import 'package:goodtools/mcp/settings_kv.dart';
-import 'package:goodtools/ports.dart';
-import 'package:goodtools/service/calendar_actors.dart';
-import 'package:goodtools/service/ics_feed_provider.dart';
-import 'package:goodtools/service/marker_store.dart';
-import 'package:goodtools/tools/system_pim_tool.dart';
+import 'package:good_template/action/command_gateway.dart';
+import 'package:good_template/mcp/calendar_provider.dart';
+import 'package:good_template/mcp/category_tool_face.dart';
+import 'package:good_template/mcp/settings_kv.dart';
+import 'package:good_template/ports.dart';
+import 'package:good_template/service/calendar_actors.dart';
+import 'package:good_template/service/ics_feed_provider.dart';
+import 'package:good_template/service/marker_store.dart';
+import 'package:good_template/tools/system_pim_tool.dart';
 
 void main() {
   late HttpServer server;

@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-10-23
+updated: 2026-10-20
 ---
 
 # goodTools · 天气能力（和风天气 API）
@@ -17,8 +17,8 @@ updated: 2026-10-23
 flowchart LR
     A[MCP 工具面 weather_forecast] -->|依赖反转| B[WeatherProvider 抽象端口]
     B -->|注入| C[QWeatherProvider / lib/service/weather.dart]
-    C -->|GeoAPI 城市解析| D[账号专属 Host /geo/v2/city/lookup]
-    C -->|天气/预警/指数| E[账号专属 Host /v7/...]
+    C -->|GeoAPI 城市解析| D[geo.qweather.com/v2/city/lookup]
+    C -->|天气/预警/指数| E[devapi/api.qweather.com/v7/...]
     A -. 缺省城市回退 .-> F[LocationSensorProvider.current]
     G[SettingsKv] -->|qweather_key/host/weather_location| C
 ```
@@ -32,11 +32,10 @@ flowchart LR
 | Key | 含义 | 默认值 | 说明 |
 |---|---|---|---|
 | `qweather_key` | 和风天气 API Key | 空 | 缺失 → `ERR_WEATHER_KEY_MISSING` |
-| `qweather_host` | 账号专属 API Host | 空（**必填**） | 形如 `xxxx.re.qweatherapi.com`（控制台「项目管理」复制）；缺失 → `ERR_WEATHER_HOST_MISSING`；填错/未开通 → `ERR_WEATHER_HOST_INVALID` |
+| `qweather_host` | API 主机 | `devapi.qweather.com` | 公共/开发版默认；商业版填 `api.qweather.com`，填错 → 401 `ERR_WEATHER_UNAUTHORIZED` |
 | `weather_location` | 用户预设城市（中文名/行政区） | 空 | 缺省回退链的第 3 级；Agent 无权写入（信任模型），仅用户在 App 设置页自设 |
 
-> **Host 口径（2024 起，公共域名全线停用）**：实测 `devapi.qweather.com` / `api.qweather.com` 一律 403 `Invalid Host`，`geoapi.qweather.com` 一律 404 空体——公共域名**全部不可用**，天气端点与 GeoAPI 城市解析都必须走**账号专属 Host**（控制台「项目管理」复制，形如 `xxxx.re.qweatherapi.com`），它同时承载两者（GeoAPI 路径前缀 `/geo`）。Host 值在读取时**归一化**（去 `https://`、尾部 `/`、路径段，统一小写），用户直接粘贴控制台给出的 URL 也能用。
-> **Host 与 Key 的关系**：Host 由系统按账号分配（每个账号唯一），**不是** Key 派生、不能猜；Key 必须与该 Host 属同一账号绑定，否则和风返回 403 `Invalid Host` 或「服务不可访问」。
+> **Host 区分（公共版 vs 商业版）**：和风标准 Web API 主机不同——免费/开发版 `devapi.qweather.com`、商业版 `api.qweather.com`。必须让用户可配 `qweather_host` 并默认选开发版，否则用户填商业版 Key 却走开发版主机将报 401 权限失败。Host 解析失败（如非法域名）同样归类 `ERR_WEATHER_UNAUTHORIZED` 并附 `suggestion` 指引核对 Host/Key。
 
 ## MCP 工具面契约
 
@@ -133,7 +132,7 @@ flowchart LR
 
 和风天气数据 API（`/v7/weather/now`、`/v7/weather/3d`、`/v7/weather/7d`）**绝大多数不支持直接传城市中文名**，强制要求 `LocationID`（`101010100`）或标准 `lng,lat`。
 
-1. **入参为 `city`**：先经 GeoAPI 城市解析（**账号专属 Host**：`https://{qweather_host}/geo/v2/city/lookup?location={city}`）换取 `locationId`；解析结果为空 → `ERR_CITY_NOT_FOUND`。公共 GeoAPI 域名已停用，**不再兜底**（兜底只会拿到 404 空体并被误报成「查无此城」）。
+1. **入参为 `city`**：先经 GeoAPI 城市解析 `https://geo.qweather.com/v2/city/lookup?location={city}` 换取 `locationId`；解析结果为空 → `ERR_CITY_NOT_FOUND`。
    - **歧义决议（Disambiguation）**：GeoAPI 返回 `location[]` 多条目（重名县市，如「朝阳」可能是北京市朝阳区或辽宁省朝阳市）时，默认取**第一项**（和风按行政级别与权重降序排列）。
    - **出参 `city` 行政链**：取和风返回的完整行政链 `"${adm1} ${adm2} ${name}"`（如「北京市 朝阳区」）作为出参 `city`，消除 Agent 与用户的语义歧义，而非仅吐用户输入原词。
 2. **入参为 `lat/lng` 或回退到 `geo_current`**：直接拼 `location={lng},{lat}` 查天气，跳过 GeoAPI。**注意和风规范为经度在前、纬度在后**，且浮点保留 2 位小数：`location=${lng.toStringAsFixed(2)},${lat.toStringAsFixed(2)}`；地理能力输出的是火星坐标 **GCJ-02**，和风可自动识别 GCJ-02 与 WGS-84，无需手动偏移，但顺序必须正确，否则会查到公海/南极。
@@ -145,8 +144,6 @@ flowchart LR
 纯 Dart `HttpClient` 直连和风时最容易踩的物理对接坑，service 层必须显式防御：
 
 - **Gzip 强制解压**：和风所有响应强制 `Content-Encoding: gzip`。`HttpClient` 必须 `autoUncompress = true`，或对响应流统一 `GZipCodec().decode()`；否则 `jsonDecode` 在二进制乱码上发生**不可逆崩溃**（JSON 解析断裂）。
-- **错误体必须读出来**：4xx/5xx 的真实原因**只在响应体里**——和风给 JSON:API 形态 `{"error":{"status":403,"title":"Invalid Host","detail":"An invalid or unauthorized API Host."}}`，未开通服务的场景给中文「服务不可访问」。若对 4xx 直接 `drain` 丢体，用户只会看到笼统「鉴权失败」，无法自愈。必须解析错误体并把真因写进 `message`/`suggestion`。
-- **Host 值归一化**：读取 `qweather_host` 后去掉 `https://`、尾部 `/`、路径段并统一小写，再拼进 `Uri(host:)`——否则用户粘贴控制台 URL 会拼出畸形 URI，失败原因难以定位。
 - **经纬度顺序对齐**：用坐标查天气时，URL 拼接必须为 `location=${lng},${lat}`（**经度在前、纬度在后**），浮点保留 2 位小数。切勿按 `(lat,lng)` 习惯反向拼接。
 - **公制单位显式声明**：所有天气请求 URL 必须显式附带 `unit=m`（公制），避免默认/环境差异返回华氏度引发 Agent 计算错误；出参 `temp`/`tempMin`/`tempMax`/`precip` 等约定为**纯数字字符串 + 隐式公制（°C / mm）**，如 `temp: "18"`。
 - **HTTP 200 ≠ 业务成功**：和风在鉴权失败/欠费/无数据时，**HTTP 状态码往往仍是 200**，真实状态藏在 Body 的 `code` 字段。必须做响应体业务码拦截（见下）。
@@ -185,9 +182,7 @@ flowchart LR
 | code | 触发条件 | suggestion 指引 |
 |---|---|---|
 | `ERR_WEATHER_KEY_MISSING` | `qweather_key` 未配置（SettingsKv 读取为空） | 在 App 设置页填入 QWeather API Key |
-| `ERR_WEATHER_HOST_MISSING` | `qweather_host` 未配置（公共域名已停用，天气与 GeoAPI 均需账号专属 Host） | 在 App 设置页填入账号专属 Host（控制台「项目管理」复制，形如 `xxxx.re.qweatherapi.com`） |
-| `ERR_WEATHER_HOST_INVALID` | 账号专属 Host 无效或该 Host 未开通目标 API（和风 403 `Invalid Host` / 404「服务不可访问」等文案） | 核对 Host 拼写与账号归属、Key 是否与该 Host 同账号、该账号是否已开通对应 API |
-| `ERR_WEATHER_UNAUTHORIZED` | HTTP/Body `401`/`402`/`403`：Key 无效、账号未绑定或额度透支、无接口权限（**Host 错配已单列为 `ERR_WEATHER_HOST_INVALID`**） | 核对 Key 绑定与额度及接口权限 |
+| `ERR_WEATHER_UNAUTHORIZED` | HTTP/Body `401`/`402`/`403`：Key 无效、账号未绑定或额度透支、Host 错配、无接口权限 | 核对 Key 绑定与额度、Host（开发版 `devapi` / 商业版 `api`）及接口权限 |
 | `ERR_CITY_NOT_FOUND` | GeoAPI 查无此城，或天气 Body `code:"404"` 无该地点数据 | 检查城市名/行政区写法，或改用经纬度查询 |
 | `ERR_LOCATION_UNAVAILABLE` | 无 lat/lng、无 city、无 `weather_location`、且无定位权限/硬件 | 在设置页预设城市，或授予定位权限 |
 | `ERR_NETWORK` | 网络异常 / 超时 / DNS 失败（HTTP 层） | 检查网络连接后重试 |

@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.goodhub.goodtools"
+    namespace = "com.goodhub.good_template"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -16,7 +16,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.goodhub.goodtools"
+        applicationId = "com.goodhub.good_template"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         // minSdk 基线 34（Android 14），与同生态其余三家（goodshare / shiguang / goodhub）对齐。
@@ -55,7 +55,7 @@ dependencies {
     // + 反射派发器。零手写 AIDL——契约（:contract 模块）经 api 依赖传递引入。
     // 本仓业务逻辑在 Dart，故 McpBinderService 重写 handleJsonRpc 接管路由（见该文件头注释）。
     // 版本与 contract_version 绑定，见 SDK 仓 VERSION 文件。
-    implementation("com.zzh.goodhub.mcp:goodhub-mcp-plugin-core:0.2.0")
+    implementation("com.zzh.goodhub.mcp:goodhub-mcp-plugin-core:0.1.1")
 }
 
 kotlin {

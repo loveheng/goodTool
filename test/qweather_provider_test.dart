@@ -8,10 +8,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:goodtools/mcp/geo_provider.dart';
-import 'package:goodtools/mcp/weather_provider.dart';
-import 'package:goodtools/ports.dart';
-import 'package:goodtools/service/weather.dart';
+import 'package:good_template/mcp/geo_provider.dart';
+import 'package:good_template/mcp/weather_provider.dart';
+import 'package:good_template/ports.dart';
+import 'package:good_template/service/weather.dart';
 
 void main() {
   late HttpServer server;
@@ -27,12 +27,6 @@ void main() {
   int nowCount = 0;
   int dailyCount = 0;
 
-  /// 强制返回的错误体（配合 [forcedStatus] 造和风真实错误文案）。
-  Map<String, Object?>? forcedErrorBody;
-
-  /// 强制返回的 200 响应体（造「HTTP 200 但体内是错误」的形态）。
-  Map<String, Object?>? forcedOkBody;
-
   setUp(() async {
     kv = InMemoryKv();
     await kv.settingsSet({kQweatherKey: 'TESTKEY'});
@@ -44,8 +38,6 @@ void main() {
     lookupCount = 0;
     nowCount = 0;
     dailyCount = 0;
-    forcedErrorBody = null;
-    forcedOkBody = null;
 
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((HttpRequest req) {
@@ -59,11 +51,10 @@ void main() {
       }
 
       if (forcedStatus != null) {
-        send(forcedStatus!, forcedErrorBody ?? const <String, Object?>{});
+        send(forcedStatus!, const <String, Object?>{});
         return;
       }
       switch (p) {
-        case '/geo/v2/city/lookup':
         case '/v2/city/lookup':
           lookupCount++;
           final q = req.uri.queryParameters['location'];
@@ -71,10 +62,6 @@ void main() {
           return;
         case '/v7/weather/now':
           nowCount++;
-          if (forcedOkBody != null) {
-            send(200, forcedOkBody!);
-            return;
-          }
           send(200, forcedBodyCode == null ? _nowBody : _codeBody(forcedBodyCode!));
           return;
         case '/v7/weather/3d':
@@ -107,6 +94,7 @@ void main() {
       QWeatherProvider(
         kv,
         sensor: sensor,
+        geoHost: server.address.host,
         apiHost: server.address.host,
         port: server.port,
         scheme: 'http',
@@ -190,15 +178,6 @@ void main() {
       final r = await provider().forecast(city: '朝阳');
       expect(r.error?.code, WeatherErr.keyMissing);
       expect(seen, isEmpty);
-    });
-
-    test('未配置 Host → ERR_WEATHER_HOST_MISSING（2024 起公共域名停用）', () async {
-      // 不注入 apiHost override、KV 也未设 qweather_host；坐标模式跳过 GeoAPI，
-      // 直达天气端点时 _apiHost() 应给出明确的 Host 缺失错误而非误导性 403。
-      final r = await QWeatherProvider(kv).forecast(lat: 39.9042, lng: 116.4074);
-      expect(r.success, isFalse);
-      expect(r.error?.code, WeatherErr.hostMissing);
-      expect(r.error?.suggestion, contains('qweatherapi'));
     });
 
     test('Body code 401 → ERR_WEATHER_UNAUTHORIZED（HTTP 仍是 200）', () async {
@@ -285,88 +264,6 @@ void main() {
       expect(nowUri.queryParameters['location'], dailyUri.queryParameters['location']);
       expect(nowCount, 1);
       expect(dailyCount, 1);
-    });
-  });
-
-  group('Host 配置与错误体真因（2024 起公共域名停用）', () {
-    test('Host 归一化：去协议/尾部斜杠/路径段，统一小写', () {
-      expect(normalizeQweatherHost('https://ACCT.re.qweatherapi.com/'),
-          'acct.re.qweatherapi.com');
-      expect(normalizeQweatherHost('  acct.re.qweatherapi.com  '),
-          'acct.re.qweatherapi.com');
-      expect(normalizeQweatherHost('http://acct.re.qweatherapi.com/v7'),
-          'acct.re.qweatherapi.com');
-      expect(normalizeQweatherHost(''), '');
-    });
-
-    test('KV 里的 Host 带协议/斜杠也能正常出网（归一化后 URI 不畸形）', () async {
-      await kv.settingsSet({kQweatherHost: 'https://${server.address.host}/'});
-      final p = QWeatherProvider(kv, port: server.port, scheme: 'http');
-      final r = await p.forecast(city: '朝阳');
-      expect(r.success, isTrue,
-          reason: '${r.error?.code} / ${r.error?.message}');
-      // 请求确实落到本地服务器（URI 未畸形）且走账号 Host 口径路径。
-      expect(seen.any((u) => u.path == '/geo/v2/city/lookup'), isTrue);
-      expect(seen.any((u) => u.path == '/v7/weather/now'), isTrue);
-    });
-
-    test('账号专属 Host：GeoAPI 与天气走同一 Host（GeoAPI 带 /geo 前缀）', () async {
-      await kv.settingsSet({kQweatherHost: server.address.host});
-      final p = QWeatherProvider(kv, port: server.port, scheme: 'http');
-      final r = await p.forecast(city: '朝阳');
-      expect(r.success, isTrue);
-      expect(seen.any((u) => u.path == '/geo/v2/city/lookup'), isTrue);
-      expect(seen.any((u) => u.path == '/v7/weather/now'), isTrue);
-    });
-
-    test('未配置 Host 时城市解析不再打公共 GeoAPI → ERR_WEATHER_HOST_MISSING', () async {
-      final r = await QWeatherProvider(kv).forecast(city: '朝阳');
-      expect(r.error?.code, WeatherErr.hostMissing);
-      expect(seen, isEmpty); // 公共域名已失效，不做无谓往返
-    });
-
-    test('403 Invalid Host → ERR_WEATHER_HOST_INVALID（错误体透传真因）', () async {
-      forcedStatus = 403;
-      forcedErrorBody = const <String, Object?>{
-        'error': {
-          'status': 403,
-          'type': 'https://dev.qweather.com/docs/resource/error-code/#invalid-host',
-          'title': 'Invalid Host',
-          'detail': 'An invalid or unauthorized API Host.',
-        },
-      };
-      final r = await provider().forecast(city: '朝阳');
-      expect(r.error?.code, WeatherErr.hostInvalid);
-      expect(r.error?.message, contains('Invalid Host'));
-      expect(r.error?.suggestion, contains('qweatherapi'));
-    });
-
-    test('404「服务不可访问」→ ERR_WEATHER_HOST_INVALID', () async {
-      forcedStatus = 404;
-      forcedErrorBody = const <String, Object?>{
-        'error': {
-          'status': 404,
-          'title': 'Not Found',
-          'detail': '服务不可访问',
-        },
-      };
-      final r = await provider().forecast(city: '朝阳');
-      expect(r.error?.code, WeatherErr.hostInvalid);
-      expect(r.error?.message, contains('服务不可访问'));
-    });
-
-    test('HTTP 200 + JSON:API 错误体 → 不返回「成功但 now 为空」', () async {
-      forcedOkBody = const <String, Object?>{
-        'error': {
-          'status': 403,
-          'title': 'Invalid Host',
-          'detail': 'An invalid or unauthorized API Host.',
-        },
-      };
-      final r = await provider().forecast(city: '朝阳');
-      expect(r.success, isFalse);
-      expect(r.error?.code, WeatherErr.hostInvalid);
-      expect(r.now, isNull);
     });
   });
 }

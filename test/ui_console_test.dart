@@ -4,17 +4,17 @@
 // 覆盖红线：AI 侧**不可触达** user_* 命令（信任模型机制化）、凭证**不回显明文**
 // （standards §6.1）、失败一律带机器码而非静默兜底。
 import 'package:flutter_test/flutter_test.dart';
-import 'package:goodtools/action/command_gateway.dart';
-import 'package:goodtools/action/settings_commands.dart';
-import 'package:goodtools/mcp/settings_keys.dart';
-import 'package:goodtools/ports.dart';
-import 'package:goodtools/repository/settings_repository.dart';
-import 'package:goodtools/service/in_memory_secret_store.dart';
-import 'package:goodtools/service/persistent_kv.dart';
-import 'package:goodtools/service/settings_actors.dart';
-import 'package:goodtools/ui_ports/calculator_port.dart';
-import 'package:goodtools/ui_ports/geo_port.dart';
-import 'package:goodtools/ui_ports/settings_port.dart';
+import 'package:good_template/action/command_gateway.dart';
+import 'package:good_template/action/settings_commands.dart';
+import 'package:good_template/mcp/settings_keys.dart';
+import 'package:good_template/ports.dart';
+import 'package:good_template/repository/settings_repository.dart';
+import 'package:good_template/service/in_memory_secret_store.dart';
+import 'package:good_template/service/persistent_kv.dart';
+import 'package:good_template/service/settings_actors.dart';
+import 'package:good_template/ui_ports/calculator_port.dart';
+import 'package:good_template/ui_ports/geo_port.dart';
+import 'package:good_template/ui_ports/settings_port.dart';
 
 void main() {
   group('CommandGateway · 用户侧注册表', () {

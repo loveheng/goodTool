@@ -7,8 +7,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:goodtools/mcp/geo_provider.dart';
-import 'package:goodtools/service/amap_http_provider.dart';
+import 'package:good_template/mcp/geo_provider.dart';
+import 'package:good_template/service/amap_http_provider.dart';
 
 void main() {
   late HttpServer server;

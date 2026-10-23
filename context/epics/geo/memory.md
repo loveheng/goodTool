@@ -19,10 +19,6 @@ last-merge: none
   4. **`geo_distance` 分档**：`straight` 走本地 Haversine（不依赖网络与 Key，主线可用），`road` 才走高德驾车距离。
 - **已知限制（非 S4 范围，已登记域内待办）**：`geo_route` 的 `mode=transit` 缺 `city` 时按 geo.md 本应「由起点自动逆地理推导」，当前实现返回 `MISSING_ARGUMENT` 并在 message 中给出自愈指引（先 `geo_reverse` 取 city），其余 7 个 action 端到端不受影响；自动推导留给后续排期。
 
-- 2026-10-23 **进场自动定位根因修正已落地（analyze 0 issue + test 555 全绿 + arch-guard 7 条全过；新增 `test/system_location_sensor_test.dart` 13 例）**：
-  - **根因**：定位源只 catch `TimeoutException`，geolocator 在系统定位开关关闭时抛 `LocationServiceDisabledException`、权限流程异常抛 `PermissionDeniedException` → 异常冒泡出端口 → UI `await` 抛出、`setState` 不执行 → 「定位中…」永久挂起、相机停在硬编码占位中心（用户报「定位原始起点」）。
-  - **处置**：① 定位源任何失败一律 fail-closed 返 null（`[LOC]` 日志留原因）；② 分档回退 高精度 GPS(12s) → 低精度网络(8s) → 上次已知位置（仅采信 2 分钟内新鲜读数）；③ UI 侧 `_readLocation()` 兜底 try/catch（纵深防御），失败给可重试提示。
-  - **未闭环**：真机未连（本轮无设备），进场自动定位的真实 GPS 冷启动表现与权限弹窗流程**仍待真机验收**。
-
 ## 断点
-- [断点] 下一步：**真机验收进场自动定位**（进地图页是否自动跳到真实位置、权限拒/定位开关关时胶囊提示是否可操作并可重试）——本轮已修根因但无设备验证；叠加既有验收项：路线三件套（默认起点/步骤区块/转向标密度）、收藏夹分组、美化轮六项、五分段切换、瓦片降级
+- [断点] **S7 已完成接线**：`buildGeoTool()` 由 `lib/tool_face_assembly.dart`（装配件）装配进 MCP 线级，HTTP 调试通道与 Binder 生产通道共用同一份；注入 `AmapHttpProvider`（真实高德 REST，Key 经 KV 懒读）与 `NullLocationSensorProvider`（真实定位需 geolocator，S7 未引入，fail-closed 返回 `PERMISSION_DENIED`）。S7 同轮把 `amapWebKey`/`amapSecret` 静态参数改为懒读 reader，故本 epic 的 `buildGeoTool` 构造签名有变。
+- [断点] 下一步：等待新子任务。本域剩余项 = `geo_route` mode=transit 的 city 自动逆推（见本域 todos）；跨域主线 = domain_gateway 的 S8 与 system_pim / weather 域排期。

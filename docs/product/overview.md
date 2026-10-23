@@ -33,7 +33,7 @@ goodTools 是面向**外部 MCP 客户端（Agent）**的**「生活时空基座
 flowchart TD
     A[外部 MCP 客户端 / Agent] -->|生产通道: Binder IPC| B(McpBinderService 原生侧)
     A -->|调试通道: HTTP 回环 127.0.0.1:8765| C[HttpTransport]
-    B -->|MethodChannel goodtools/mcp_binder| D[mcpBinderMain 无头 isolate]
+    B -->|MethodChannel good_template/mcp_binder| D[mcpBinderMain 无头 isolate]
     C -->|handleJsonRpc| E[McpServer 纯 Dart 内核]
     D -->|handleJsonRpc| E
     E -->|schemas/call| F[McpToolFace 端口]

@@ -15,7 +15,7 @@ import '../mcp/calendar_provider.dart';
 
 /// 与 Kotlin 侧 `SystemCalendarChannel.kt` 保持一致的通道名（勿单方改动）。
 const MethodChannel kSystemCalendarChannel =
-    MethodChannel('com.goodhub.goodtools/calendar');
+    MethodChannel('com.goodhub.good_template/calendar');
 
 class MethodChannelSystemCalendarPort implements SystemCalendarPort {
   const MethodChannelSystemCalendarPort();

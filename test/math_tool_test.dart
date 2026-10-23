@@ -6,8 +6,8 @@ library;
 /// G5 宽容解析边界、双轨 numericValue 无损，以及未知 action 的 UNKNOWN_ACTION。
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:goodtools/mcp/category_tool_face.dart';
-import 'package:goodtools/tools/math/math_tool.dart';
+import 'package:good_template/mcp/category_tool_face.dart';
+import 'package:good_template/tools/math/math_tool.dart';
 
 Map<String, Object?> _parse(SubActionResult r) {
   final text = r.content.first['text'] as String;
@@ -39,13 +39,6 @@ void main() {
       final j = await run('calc_eval', {'expr': '320 km/h to m/s'});
       expect(j['success'], isTrue);
       expect(j['numericValue'], closeTo(88.8889, 1e-3));
-    });
-
-    test('中文全链路内联换算（10 公里 换算 英里）与 to 等值', () async {
-      final zh = await run('calc_eval', {'expr': '10 公里 换算 英里'});
-      final en = await run('calc_eval', {'expr': '10 km to mi'});
-      expect(zh['success'], isTrue);
-      expect(zh['numericValue'], en['numericValue']);
     });
 
     test('precision 控制小数位', () async {
@@ -107,86 +100,6 @@ void main() {
       expect(j['dimension'], 'speed');
       expect(j['baseUnit'], 'm/s');
       expect(j['units'], isA<List>());
-    });
-  });
-
-  group('list_stats 高精度列表统计', () {
-    test('max / min 返回 Decimal 比较结果与首达下标', () async {
-      final mx = await run('list_stats',
-          {'values': [3, '0.999999999999999999', 1], 'op': 'max'});
-      expect(mx['success'], isTrue);
-      expect(mx['result'], '3');
-      expect(mx['index'], 0);
-
-      final mn = await run('list_stats',
-          {'values': [3, '0.999999999999999999', 1], 'op': 'min'});
-      expect(mn['success'], isTrue);
-      expect(mn['result'], '0.999999999999999999');
-      expect(mn['index'], 1);
-    });
-
-    test('sort 升/降序；高精度数字串全程不转 double', () async {
-      final v = ['0.123456789012345678', 1, '0.123456789012345679'];
-      final asc = await run('list_stats', {'values': v, 'op': 'sort'});
-      final nums = asc['numericValues'] as List;
-      expect(nums[0], '0.123456789012345678'); // 双双以字符串无损传递
-      expect(nums[1], '0.123456789012345679');
-      expect(nums[2], 1);
-
-      final desc = await run('list_stats',
-          {'values': [1, 5, 3], 'op': 'sort', 'order': 'desc'});
-      expect(desc['numericValues'], [5, 3, 1]);
-      expect(desc['order'], 'desc');
-    });
-
-    test('sum / mean / median', () async {
-      final sum = await run('list_stats',
-          {'values': ['0.1', '0.2'], 'op': 'sum'});
-      expect(sum['numericValue'], 0.3); // Decimal 精确，非 0.30000000000000004
-
-      final mean = await run('list_stats',
-          {'values': [1, 2, 3, 4], 'op': 'mean'});
-      expect(mean['numericValue'], 2.5);
-
-      final medianOdd = await run('list_stats',
-          {'values': [5, 1, 3], 'op': 'median'});
-      expect(medianOdd['numericValue'], 3);
-
-      final medianEven = await run('list_stats',
-          {'values': [1, 2, 3, 4], 'op': 'median'});
-      expect(medianEven['numericValue'], 2.5);
-    });
-
-    test('precision 控制小数位', () async {
-      final j = await run('list_stats',
-          {'values': [1, 2], 'op': 'mean', 'precision': 2});
-      expect(j['result'], '1.5');
-
-      final j2 = await run('list_stats',
-          {'values': [1, 1, 1], 'op': 'mean', 'precision': 0});
-      expect(j2['result'], '1');
-    });
-
-    test('结构化错误：空数组 / 非法 op / 非法元素 / 非法 order', () async {
-      final empty = await run('list_stats', {'values': <int>[], 'op': 'sum'});
-      expect((empty['error'] as Map<String, Object?>)['code'],
-          contains('MISSING_ARGUMENT'));
-
-      final badOp = await run('list_stats',
-          {'values': [1], 'op': 'avg'});
-      final err = badOp['error'] as Map<String, Object?>;
-      expect(err['code'], contains('INVALID_ARGUMENT'));
-      expect(err['candidates'], contains('mean')); // 自愈候选
-
-      final badElem = await run('list_stats',
-          {'values': [1, 'abc'], 'op': 'sum'});
-      expect((badElem['error'] as Map<String, Object?>)['message'],
-          contains('values[1]'));
-
-      final badOrder = await run('list_stats',
-          {'values': [1], 'op': 'sort', 'order': 'up'});
-      expect((badOrder['error'] as Map<String, Object?>)['code'],
-          contains('INVALID_ARGUMENT'));
     });
   });
 
