@@ -52,39 +52,9 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   Widget build(BuildContext context) {
     final t = tokensOf(context);
-    final service = widget.port.service();
     return ListView(
       padding: EdgeInsets.all(t.metrics.space16),
       children: <Widget>[
-        SectionCard(
-          title: 'MCP 服务',
-          trailing: _ServiceStateBadge(running: service.running),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Wrap(
-                spacing: t.metrics.space8,
-                runSpacing: t.metrics.space8,
-                children: <Widget>[
-                  TelemetryText('端口 ${service.port}'),
-                  TelemetryText(service.endpoint),
-                  TelemetryText(
-                    service.hasToken ? '令牌已生成' : '令牌未生成',
-                    color: service.hasToken ? t.palette.l1Ok : t.palette.l2Warn,
-                  ),
-                ],
-              ),
-              if (service.lastError != null) ...<Widget>[
-                SizedBox(height: t.metrics.space8),
-                Text(
-                  '上次错误：${service.lastError}',
-                  style: t.typeScale.compact.copyWith(color: t.palette.danger),
-                ),
-              ],
-            ],
-          ),
-        ),
-        SizedBox(height: t.metrics.space16),
         SectionCard(
           title: '权限与配置',
           trailing: IconButton(
@@ -185,29 +155,4 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 }
 
-/// 服务状态徽标：**状态点 + 文字双通道**（禁仅以绿点示意）。
-class _ServiceStateBadge extends StatelessWidget {
-  const _ServiceStateBadge({required this.running});
 
-  final bool running;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = tokensOf(context);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        StatusDot(
-          state: running ? ReadinessState.ready : ReadinessState.missing,
-        ),
-        SizedBox(width: t.metrics.space4),
-        Text(
-          running ? '运行中' : '已停止',
-          style: t.typeScale.compact.copyWith(
-            color: running ? t.palette.l1Ok : t.palette.terminalMuted,
-          ),
-        ),
-      ],
-    );
-  }
-}

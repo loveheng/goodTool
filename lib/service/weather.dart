@@ -26,16 +26,36 @@ import '../mcp/settings_kv.dart';
 import '../mcp/weather_provider.dart';
 import '../mcp/settings_keys.dart';
 
-/// 城市解析端点域名（GeoAPI 固定，不随 `qweather_host` 配置走）。
-const String qweatherGeoHost = 'geo.qweather.com';
+/// GeoAPI 公共域名。
+///
+/// **已失效（2026-10-23 实测）**：`geoapi.qweather.com` 对 `/v2/city/lookup` 与
+/// `/geo/v2/city/lookup` 一律返回 404 空体（连 401 鉴权错都不给），公共
+/// `devapi`/`api` 则返回 403 `Invalid Host`。故公共域名全线不可用：
+/// **GeoAPI 与天气端点都必须走账号专属 Host**（形如 `xxxx.re.qweatherapi.com`，
+/// 控制台「项目管理」复制），它同时承载两者（GeoAPI 路径前缀 `/geo`）。
+const String qweatherGeoHost = 'geoapi.qweather.com';
 
-/// 默认数据主机（开发/免费版；商业版在设置里填 `api.qweather.com`）。
-const String qweatherDefaultApiHost = 'devapi.qweather.com';
+/// Host 归一化：用户从控制台复制粘贴可能带上 `https://`、尾部 `/` 甚至路径段，
+/// 直接塞进 `Uri(host:)` 会拼出畸形 URI（请求必然失败且错误难懂）。归一为
+/// **纯主机名**（小写、无协议、无路径、无端口）。
+String normalizeQweatherHost(String raw) {
+  var h = raw.trim();
+  if (h.isEmpty) return '';
+  final lower = h.toLowerCase();
+  if (lower.startsWith('https://')) {
+    h = h.substring('https://'.length);
+  } else if (lower.startsWith('http://')) {
+    h = h.substring('http://'.length);
+  }
+  final slash = h.indexOf('/');
+  if (slash >= 0) h = h.substring(0, slash);
+  return h.trim().toLowerCase();
+}
 
 /// SettingsKv 键：和风 API Key。
 const String kQweatherKey = SettingsKeys.qweatherKey;
 
-/// SettingsKv 键：数据主机（公共版 devapi / 商业版 api）。
+/// SettingsKv 键：账号专属 API Host（公共域名自 2024 年起停用，本项必填）。
 const String kQweatherHost = SettingsKeys.qweatherHost;
 
 /// SettingsKv 键：用户预设城市（Agent 无权写入，仅 App 设置页自设）。
@@ -57,7 +77,6 @@ class QWeatherProvider implements WeatherProvider {
     this._kv, {
     LocationSensorProvider? sensor,
     this.client,
-    this.geoHost = qweatherGeoHost,
     String? apiHost,
     this.port,
     this.scheme = 'https',
@@ -70,7 +89,8 @@ class QWeatherProvider implements WeatherProvider {
   final SettingsKv _kv;
   final LocationSensorProvider _sensor;
   final HttpClient? client;
-  final String geoHost;
+
+  /// 注入口：覆盖账号专属 Host（单测注入本地 HttpServer 用；生产恒走 KV 配置）。
   final String? apiHostOverride;
   final int? port;
   final String scheme;
@@ -91,6 +111,9 @@ class QWeatherProvider implements WeatherProvider {
     int days = 3,
   }) async {
     try {
+      // Key 校验前置：Key 是每一跳请求（含 GeoAPI 城市解析）都必需的，
+      // **缺失优先于 Host 缺失上报**——更基础的配置错先报，用户动作更明确。
+      await _ensureKey();
       final loc = await _resolve(city: city, lat: lat, lng: lng);
       final cacheKey = '${loc.location}#$days';
       final cached = _cache[cacheKey];
@@ -112,6 +135,15 @@ class QWeatherProvider implements WeatherProvider {
     } on _WeatherFail catch (e) {
       return WeatherResult.failure(
           WeatherError(e.code, e.message, suggestion: e.suggestion));
+    }
+  }
+
+  /// Key 校验（每次 forecast 前置一次）：缺失即带机器码失败，不静默兜底。
+  Future<void> _ensureKey() async {
+    final key = await _kv.settingsGet(kQweatherKey);
+    if (key == null || key.trim().isEmpty) {
+      throw const _WeatherFail(WeatherErr.keyMissing, '和风天气 API Key 未配置',
+          '请在 App 设置页填入 QWeather API Key');
     }
   }
 
@@ -154,12 +186,38 @@ class QWeatherProvider implements WeatherProvider {
   String _lngLat(double lng, double lat) =>
       '${lng.toStringAsFixed(2)},${lat.toStringAsFixed(2)}';
 
+  /// GeoAPI 端点解析：**只用账号专属 Host**（公共 GeoAPI 域名已全量失效，见
+  /// `qweatherGeoHost` 说明）。账号专属 Host 同时承载天气与 GeoAPI 城市解析
+  /// （GeoAPI 路径前缀 `/geo`）。
+  Future<({String host, String path})> _geoEndpoint() async {
+    final raw = await _kv.settingsGet(kQweatherHost);
+    final h = normalizeQweatherHost(raw ?? '');
+    if (h.isNotEmpty) {
+      return (host: h, path: '/geo/v2/city/lookup');
+    }
+    final override = apiHostOverride;
+    if (override != null) {
+      // 注入口（单测/注入）：与账号 Host 同口径。
+      return (host: override, path: '/geo/v2/city/lookup');
+    }
+    // 公共 GeoAPI 兜底已失效：再拿它兜底只会拿到 404 空体，被翻译成误导性的
+    // 「查无此城」——这里直接给真实原因（Host 未配置）。
+    throw const _WeatherFail(
+      WeatherErr.hostMissing,
+      '未配置和风天气 API Host（城市解析亦需要）',
+      '和风公共域名（devapi/api/geoapi）自 2024 年起已停用。请在 App 设置页填入'
+      '账号专属 API Host（控制台「项目管理」复制，形如 xxxx.re.qweatherapi.com）；'
+      '该 Host 同时服务天气与 GeoAPI 城市解析。',
+    );
+  }
+
   /// 两阶段查询首段：城市中文名 → LocationID（命中映射缓存则免往返）。
   Future<_Loc> _lookupCity(String city) async {
     final hit = _cityCache[city];
     if (hit != null) return hit;
 
-    final body = await _get(geoHost, '/v2/city/lookup', {'location': city});
+    final ep = await _geoEndpoint();
+    final body = await _get(ep.host, ep.path, {'location': city});
     final raw = body['location'] is List ? body['location'] as List : const [];
     if (raw.isEmpty) {
       throw _WeatherFail(WeatherErr.cityNotFound, '查无此城：$city',
@@ -269,11 +327,29 @@ class QWeatherProvider implements WeatherProvider {
   Future<String> _apiHost() async {
     final override = apiHostOverride;
     if (override != null) return override;
-    final h = await _kv.settingsGet(kQweatherHost);
-    return (h == null || h.trim().isEmpty) ? qweatherDefaultApiHost : h.trim();
+    final raw = await _kv.settingsGet(kQweatherHost);
+    final h = normalizeQweatherHost(raw ?? '');
+    // 2024 起公共 devapi/api 域名停用返回 403——不再 fallback 到已死的默认域名，
+    // 改为明确引导用户配置账号专属 Host（控制台「项目管理」复制，形如
+    // xxxx.re.qweatherapi.com），该 Host 同时服务天气与 GeoAPI。
+    if (h.isEmpty) {
+      throw const _WeatherFail(
+        WeatherErr.hostMissing,
+        '未配置和风天气 API Host',
+        '自 2024 年起和风天气已停用公共 devapi/api 域名（返回 403）。请在 App 设置页'
+        '填入账号专属 API Host（控制台「项目管理」复制，形如 xxxx.re.qweatherapi.com）；'
+        '该 Host 同时用于天气与 GeoAPI 城市解析。',
+      );
+    }
+    return h;
   }
 
   /// 单条 GET：Key 注入 + 超时 + 状态码拦截 + JSON 解析 + Body 业务码拦截。
+  ///
+  /// **错误体必须读出来**：和风把真实原因放在响应体里——403 时给 JSON:API 形态
+  /// `{"error":{"title":"Invalid Host","detail":"An invalid or unauthorized API Host."}}`，
+  /// 未开通的场景给中文「服务不可访问」。旧实现对 4xx 直接 `drain` 丢弃响应体，
+  /// 用户只看到笼统「鉴权失败」，拿不到「Host 无效 / 服务未开通」这类可自愈真因。
   Future<Map<String, Object?>> _get(
     String host,
     String path,
@@ -298,45 +374,24 @@ class QWeatherProvider implements WeatherProvider {
       );
       final req = await http.getUrl(uri).timeout(qweatherRequestTimeout);
       final res = await req.close().timeout(qweatherRequestTimeout);
-      if (res.statusCode == HttpStatus.tooManyRequests) {
-        await res.drain<void>();
-        throw const _WeatherFail(WeatherErr.rateLimited, '和风频控：请求过于频繁',
-            '降低调用频率；已有缓存时会自动回放');
-      }
-      if (res.statusCode == HttpStatus.unauthorized ||
-          res.statusCode == HttpStatus.forbidden ||
-          res.statusCode == HttpStatus.paymentRequired) {
-        await res.drain<void>();
-        throw _WeatherFail(WeatherErr.unauthorized,
-            '和风鉴权失败（HTTP ${res.statusCode}）',
-            '核对 Key 绑定与额度、Host（开发版 devapi / 商业版 api）及接口权限');
-      }
-      if (res.statusCode == HttpStatus.notFound) {
-        await res.drain<void>();
-        throw const _WeatherFail(WeatherErr.cityNotFound,
-            '该地点无天气数据（HTTP 404）', '检查城市名写法，或改用经纬度查询');
-      }
-      if (res.statusCode != HttpStatus.ok) {
-        await res.drain<void>();
-        throw _WeatherFail(WeatherErr.network,
-            '和风返回 HTTP ${res.statusCode}', '稍后重试，或检查网络连接');
-      }
       final text = await res
           .transform(utf8.decoder)
           .fold<String>('', (acc, s) => '$acc$s')
           .timeout(qweatherRequestTimeout);
 
-      final Object? decoded;
-      try {
-        decoded = jsonDecode(text);
-      } on FormatException {
-        throw const _WeatherFail(
-            WeatherErr.network, '和风响应不是合法 JSON（疑似未解压的 gzip 流）',
-            '检查网络代理是否篡改响应');
+      final Map<String, Object?>? decoded = _decodeObject(text);
+
+      if (res.statusCode == HttpStatus.tooManyRequests) {
+        throw const _WeatherFail(WeatherErr.rateLimited, '和风频控：请求过于频繁',
+            '降低调用频率；已有缓存时会自动回放');
       }
-      if (decoded is! Map<String, Object?>) {
+      if (res.statusCode != HttpStatus.ok) {
+        throw _failFromHttp(res.statusCode, decoded);
+      }
+      if (decoded == null) {
         throw const _WeatherFail(
-            WeatherErr.network, '和风响应不是 JSON 对象', '稍后重试');
+            WeatherErr.network, '和风响应不是合法 JSON 对象（疑似未解压的 gzip 流）',
+            '检查网络代理是否篡改响应');
       }
       return _checkBody(decoded);
     } on _WeatherFail {
@@ -358,9 +413,90 @@ class QWeatherProvider implements WeatherProvider {
     }
   }
 
+  /// 响应体解码：JSON 对象 → Map；非 JSON / 非对象 → null（由调用方归类）。
+  Map<String, Object?>? _decodeObject(String text) {
+    if (text.trim().isEmpty) return null;
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(text);
+    } on FormatException {
+      return null;
+    }
+    if (decoded is Map) return decoded.cast<String, Object?>();
+    return null;
+  }
+
+  /// 非 200 响应 → 内部失败信号（**读错误体求真因**，不丢信息）。
+  _WeatherFail _failFromHttp(int status, Map<String, Object?>? body) {
+    final detail = body == null ? '' : _errorDetailOf(body);
+    final suffix = detail.isEmpty ? '' : '：$detail';
+    switch (status) {
+      case HttpStatus.unauthorized:
+        return _WeatherFail(WeatherErr.unauthorized,
+            '和风鉴权失败（HTTP 401）$suffix',
+            '核对 API Key 是否有效、且已绑定该 Host 所属账号');
+      case HttpStatus.forbidden:
+      case HttpStatus.paymentRequired:
+        if (_isHostProblem(detail)) return _hostInvalid(detail);
+        return _WeatherFail(WeatherErr.unauthorized,
+            '和风鉴权失败（HTTP $status）$suffix',
+            '核对 Key 绑定与额度、接口权限；若提示 Invalid Host，须改用账号专属 Host');
+      case HttpStatus.notFound:
+        if (_isHostProblem(detail)) return _hostInvalid(detail);
+        return _WeatherFail(WeatherErr.cityNotFound,
+            '该地点无天气数据（HTTP 404）$suffix', '检查城市名写法，或改用经纬度查询');
+      default:
+        return _WeatherFail(WeatherErr.network,
+            '和风返回 HTTP $status$suffix', '稍后重试，或检查网络连接');
+    }
+  }
+
+  /// Host / 服务不通类真因：和风文案含 `Invalid Host`、「服务不可访问」等特征。
+  bool _isHostProblem(String detail) {
+    final d = detail.toLowerCase();
+    return d.contains('invalid host') ||
+        d.contains('服务不可访问') ||
+        d.contains('not accessible') ||
+        d.contains('service not found') ||
+        d.contains('host not');
+  }
+
+  /// Host 无效 / 服务未开通：独立错误码，便于 Agent 走「去设置改 Host」自愈。
+  _WeatherFail _hostInvalid(String detail) => _WeatherFail(
+        WeatherErr.hostInvalid,
+        '和风 API Host 无效或未开通该服务${detail.isEmpty ? '' : '：$detail'}',
+        '在 App 设置页核对账号专属 API Host（控制台「项目管理」复制，形如 '
+        'xxxx.re.qweatherapi.com）；Key 须与该 Host 属同一账号绑定，'
+        '且该账号已开通对应 API 权限。',
+      );
+
+  /// 错误体里的可读原因：JSON:API 形态 `error.title/detail`，或旧版 `message`。
+  String _errorDetailOf(Map<String, Object?> body) {
+    final err = body['error'];
+    if (err is Map) {
+      final title = err['title']?.toString() ?? '';
+      final detail = err['detail']?.toString() ?? '';
+      final joined = <String>[title, detail]
+          .where((s) => s.trim().isNotEmpty)
+          .join(' · ');
+      if (joined.isNotEmpty) return joined;
+    }
+    final msg = body['message']?.toString() ?? '';
+    if (msg.trim().isNotEmpty) return msg;
+    final code = body['code']?.toString() ?? '';
+    return code.isEmpty ? '' : 'code=$code';
+  }
+
   /// **HTTP 200 内的业务码拦截**：和风鉴权失败/欠费/无数据时状态码常仍为 200，
   /// 真实状态藏在 Body `code`——只信 HTTP 码会拿着 `code:"401"` 去取 now → 空指针。
   Map<String, Object?> _checkBody(Map<String, Object?> body) {
+    // JSON:API 错误体（HTTP 200 也可能带 `error` 段）：真因在 body 里，按同一张
+    // 翻译表归并（HTTP 状态取 `error.status`）。
+    final err = body['error'];
+    if (err is Map) {
+      final status = int.tryParse(err['status']?.toString() ?? '') ?? 400;
+      throw _failFromHttp(status, body);
+    }
     final code = body['code']?.toString();
     if (code == null || code == '200') return body;
     switch (code) {
@@ -369,7 +505,8 @@ class QWeatherProvider implements WeatherProvider {
       case '403':
         throw const _WeatherFail(WeatherErr.unauthorized,
             '和风鉴权失败：Key 无效、额度透支、Host 错配或无接口权限',
-            '核对 Key 绑定与额度、Host（开发版 devapi / 商业版 api）及接口权限');
+            '核对 Key 绑定与额度；若为 403 Invalid Host，自 2024 起须改用账号专属'
+            'API Host（设置页 qweather_host，形如 xxxx.re.qweatherapi.com）');
       case '404':
         throw const _WeatherFail(WeatherErr.cityNotFound,
             '该地点无天气数据', '检查城市名/行政区写法，或改用经纬度查询');

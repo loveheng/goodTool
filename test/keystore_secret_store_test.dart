@@ -6,11 +6,11 @@
 //    **绝不**被吞成 null 假装「未配置」。
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:good_template/mcp/secret_store.dart';
-import 'package:good_template/mcp/settings_keys.dart';
-import 'package:good_template/ports.dart';
-import 'package:good_template/service/keystore_secret_store.dart';
-import 'package:good_template/service/persistent_kv.dart';
+import 'package:goodtools/mcp/secret_store.dart';
+import 'package:goodtools/mcp/settings_keys.dart';
+import 'package:goodtools/ports.dart';
+import 'package:goodtools/service/keystore_secret_store.dart';
+import 'package:goodtools/service/persistent_kv.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

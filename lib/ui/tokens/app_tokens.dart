@@ -197,7 +197,9 @@ class AppPalette {
 /// | compact | 14 | 1.25 | w500 | 阅读 | 紧凑控件文字（同字号更紧行高，不越 14~15sp 区间） |
 /// | telemetry | 12 | 1.35 | w400 | 遥测 | 时间戳 / 坐标 / 结果（§2 的 11~12sp 上沿） |
 /// | telemetryDense | 11 | 1.30 | w400 | 遥测 | 遥测密排（§2 的 11~12sp 下沿） |
+/// | telemetryDisplay | 28 | 1.25 | w500 | 遥测 | 遥测主显示（计算器结果大号等宽区） |
 /// | micro | 10.5 | 1.25 | w500 | 遥测 | 微标注（§2 的 10.5sp） |
+/// | dayNumber | 22 | 1.25 | w600 | 阅读 | 日历日号（挂历式大日号；仅日历月格使用，不进通用排版） |
 ///
 /// 字族：
 ///   - 阅读轨 Inter，缺省回落 Roboto（Android 系统字体，保证无字体资产时的可读性）；
@@ -216,7 +218,9 @@ class AppTypeScale {
     required this.compact,
     required this.telemetry,
     required this.telemetryDense,
+    required this.telemetryDisplay,
     required this.micro,
+    required this.dayNumber,
   });
 
   /// 标准档位（全仓唯一一套）。
@@ -277,12 +281,26 @@ class AppTypeScale {
       height: 1.3,
       fontWeight: FontWeight.w400,
     ),
+    telemetryDisplay: TextStyle(
+      fontFamily: 'JetBrains Mono',
+      fontFamilyFallback: <String>['Roboto Mono', 'monospace'],
+      fontSize: 28,
+      height: 1.25,
+      fontWeight: FontWeight.w500,
+    ),
     micro: TextStyle(
       fontFamily: 'JetBrains Mono',
       fontFamilyFallback: <String>['Roboto Mono', 'monospace'],
       fontSize: 10.5,
       height: 1.25,
       fontWeight: FontWeight.w500,
+    ),
+    dayNumber: TextStyle(
+      fontFamily: 'Inter',
+      fontFamilyFallback: <String>['Roboto'],
+      fontSize: 22,
+      height: 1.25,
+      fontWeight: FontWeight.w600,
     ),
   );
 
@@ -310,8 +328,14 @@ class AppTypeScale {
   /// 遥测密排（遥测轨，等宽）。
   final TextStyle telemetryDense;
 
+  /// 遥测主显示（遥测轨，等宽大号——计算器结果区）。
+  final TextStyle telemetryDisplay;
+
   /// 微标注（遥测轨，等宽）。
   final TextStyle micro;
+
+  /// 日历日号（阅读轨，挂历式大日号；仅日历月格使用）。
+  final TextStyle dayNumber;
 }
 
 /// 布局标尺 token 组（§5）：基线网格、间距阶梯、圆角分级、边框、限宽、触控热区。
@@ -346,6 +370,8 @@ class AppMetrics {
     required this.emptyStateMaxWidth,
     required this.minTouchTarget,
     required this.statusDotSize,
+    required this.inkPadHeight,
+    required this.inkStrokeWidth,
   });
 
   /// 标准标尺。
@@ -369,6 +395,8 @@ class AppMetrics {
     emptyStateMaxWidth: 560,
     minTouchTarget: 44,
     statusDotSize: 7,
+    inkPadHeight: 120,
+    inkStrokeWidth: 2.5,
   );
 
   /// 基线网格（4dp）。
@@ -427,6 +455,12 @@ class AppMetrics {
 
   /// 状态点视觉直径 7dp（热区靠透明 padding 补足）。
   final double statusDotSize;
+
+  /// 手写书写带高度（dp）。
+  final double inkPadHeight;
+
+  /// 手写墨迹笔画宽度（dp）。
+  final double inkStrokeWidth;
 }
 
 /// 动效 token 组（§4.2）：禁 Spring；只用 Decelerate / Ease-Out 紧凑减速曲线；
@@ -593,7 +627,9 @@ AppTypeScale _lerpTypeScale(AppTypeScale a, AppTypeScale b, double t) {
     compact: s(a.compact, b.compact),
     telemetry: s(a.telemetry, b.telemetry),
     telemetryDense: s(a.telemetryDense, b.telemetryDense),
+    telemetryDisplay: s(a.telemetryDisplay, b.telemetryDisplay),
     micro: s(a.micro, b.micro),
+    dayNumber: s(a.dayNumber, b.dayNumber),
   );
 }
 
@@ -619,5 +655,7 @@ AppMetrics _lerpMetrics(AppMetrics a, AppMetrics b, double t) {
     emptyStateMaxWidth: m(a.emptyStateMaxWidth, b.emptyStateMaxWidth),
     minTouchTarget: m(a.minTouchTarget, b.minTouchTarget),
     statusDotSize: m(a.statusDotSize, b.statusDotSize),
+    inkPadHeight: m(a.inkPadHeight, b.inkPadHeight),
+    inkStrokeWidth: m(a.inkStrokeWidth, b.inkStrokeWidth),
   );
 }

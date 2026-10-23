@@ -25,5 +25,10 @@ last-merge: none
   5. **可测性靠注入口**：`client`/`geoHost`/`apiHost`/`port`/`scheme`/`ttl`/`clock` 全可注入，单测起本地 `HttpServer` 走**真实请求链路**（不 Mock HttpClient），时钟注入使 TTL 与频控自愈可被确定性断言。
 - **已知限制**：天气回退链第 4 级（设备定位）受制于 `LocationSensorProvider` 仍为 Null 实现（真实实现需 geolocator，属 domain_gateway 待办）；无入参且未预设城市时回 `ERR_LOCATION_UNAVAILABLE`（fail-closed，非降级）。
 
+- 2026-10-23 **公共域名停用口径 + 错误体真因透传已落地（test 555 全绿 + analyze 0 issue + arch-guard 7 条全过；provider 单测 19→26 例）**：
+  - **实测事实**：和风公共域名全线停用——`devapi`/`api` → 403 `Invalid Host`（JSON:API 错误体），`geoapi` → 404 空体；**必须账号专属 Host**（形如 `xxxx.re.qweatherapi.com`，控制台「项目管理」复制），它同时承载天气与 GeoAPI（路径前缀 `/geo`）。
+  - **关键决策**：① **不接 SDK**（pub.dev 无官方 Flutter SDK；官方 SDK 同样要 Key+Host，不消除根因；社区插件老且为原生插件，破坏无头架构）；② 新增 `ERR_WEATHER_HOST_INVALID`（Host 无效/服务未开通）与「Key 缺失优先于 Host 缺失」的上报次序；③ **错误体必须读出**再翻译（JSON:API `error.title/detail` + 中文「服务不可访问」），旧实现丢体导致用户只看到笼统「鉴权失败」；④ HTTP 200 + `error` 段也拦截（消除「成功但 now 为空」假成功）；⑤ Host 值归一化（去协议/斜杠/路径段）；⑥ GeoAPI 不再兜底公共域名（兜底只会被误报成「查无此城」）。
+  - **用户侧待办**：天气仍需在设置页填 Key + 账号专属 Host 才能取数（**非代码可解**，SDK 也一样）。
+
 ## 断点
-- [断点] weather 域已完成（S5a→S5d 全绿）。下一步候选：① 切 `CURRENT` 回 `domain_gateway` 落地 `system_pim`（14 action，含 5 个 W 档，是 R7 写门禁的首次真实验证点）；② 清 `McpServer._builtinInstructions` 的「拾光排程师」文案残留（需产品定位拍板）；③ 接入真实 `LocationSensorProvider`（geolocator），使 geo_current/geo_compass 与天气回退链末级真正可用。
+- [断点] weather 域代码侧已收口（公共域名停用口径 + 错误体真因透传 + Host 归一化）。下一步候选：① **真机填 Key + 账号专属 Host 验证一次真实取数**（唯一未验证项：真实账号响应体形态是否与单测构造一致）；② 切 `CURRENT` 回 `domain_gateway` 落地 `system_pim`（14 action，含 5 个 W 档，是 R7 写门禁的首次真实验证点）；③ 清 `McpServer._builtinInstructions` 的「拾光排程师」文案残留（需产品定位拍板）；④ 磁力计接入（`geo_compass` 仍 fail-closed）。

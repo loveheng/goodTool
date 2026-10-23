@@ -21,6 +21,8 @@ const int _defaultDays = 3;
 ///
 /// R 档-only（weather.md 档位表为 R），[CategoryTool.commandGateway] 传 null
 /// ——[CategoryTool.call] 仅 W 档才触达网关，R 档物理不可穿透（fail-closed）。
+///
+/// [ToolVisibility.shared]：本域属四大聚合工具之一，声明允许宿主收进共享面。
 CategoryTool buildWeatherTool(WeatherProvider provider) {
   final cat = CategoryTool(
     'weather',
@@ -28,6 +30,7 @@ CategoryTool buildWeatherTool(WeatherProvider provider) {
     '位置解析优先级 = 显式经纬度 > city 城市名 > 设置项 weather_location > 设备当前定位；'
     '全部缺失返回 ERR_LOCATION_UNAVAILABLE。与日历联动做出行建议时常用 days=7。',
     null,
+    visibility: ToolVisibility.shared,
   );
   cat.register(_WeatherForecastSub(provider));
   return cat;

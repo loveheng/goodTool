@@ -29,7 +29,7 @@ import 'service/ics_feed_provider.dart';
 import 'service/system_calendar_port.dart';
 import 'service/marker_store.dart';
 import 'service/weather.dart';
-import 'tools/calendar/holiday_table.dart';
+import 'tools/calendar/ics_holiday_provider.dart';
 import 'tools/geo_tool.dart';
 import 'tools/math/math_tool.dart';
 import 'tools/system_pim_tool.dart';
@@ -53,10 +53,10 @@ const String kAmapSecret = SettingsKeys.amapSecret;
 /// 前三者全 R 档；system_pim 的 W 档由本工厂登记 Actor 后经网关派发。
 ///
 /// **26 个 action 全部真实可用**：P2-② 时区（`package:timezone`）、P2-③ 农历、
-/// P2-④ ICS 源、P2-⑦ 系统日历源（平台通道）均已落地。唯一外部缺口是
-/// `LocationSensorProvider` 真实实现（geolocator）未接入——`geo_current` /
-/// `geo_compass` 与天气回退链末级据此 fail-closed 返 `PERMISSION_DENIED` /
-/// `ERR_LOCATION_UNAVAILABLE`（非伪造坐标）。
+/// P2-④ ICS 源、P2-⑦ 系统日历源（平台通道）均已落地；定位于 2026-10-22 经
+/// geolocator 接入（`SystemLocationSensorProvider`，main.dart 单实例注入），
+/// `geo_current` 真实可用；唯一缺口剩 `geo_compass`（磁力计）——缺省仍走
+/// Null 实现 fail-closed 返 `PERMISSION_DENIED`（非伪造坐标）。
 McpToolFace buildDefaultToolFace({
   required SettingsKv kv,
   LocationSensorProvider? sensor,
@@ -65,10 +65,11 @@ McpToolFace buildDefaultToolFace({
   CalendarMarkerStore? markers,
   SystemCalendarPort? systemCalendar,
   CalendarFeedProvider? feeds,
+  HolidayProvider? holidays,
   CommandGateway? gateway,
 }) {
-  // 定位/磁力计：真实平台实现（geolocator + 权限流）尚未接入，缺省走 Null 实现——
-  // 它是 **fail-closed** 而非兜底：`geo_current` / `geo_compass` 返回
+  // 定位（geolocator）已由 main.dart 注入真实实现；此处缺省仍走 Null 实现——
+  // 它是 **fail-closed** 而非兜底：未注入时 `geo_current` / `geo_compass` 返回
   // `PERMISSION_DENIED` 机器码并引导用户授权，不返回伪造坐标（standards §1.2）；
   // 天气回退链第 4 级同样止步于此，最终回 `ERR_LOCATION_UNAVAILABLE`。
   final sensors = sensor ?? const NullLocationSensorProvider();
@@ -99,6 +100,15 @@ McpToolFace buildDefaultToolFace({
     feeds: ics,
   );
 
+  // 节假日来源：优先用注入的 ICS 驱动源；未注入则内部 new 并后台预热（ICS 本地缓存，
+  // 首次命令调用前通常已完成）。失败回落空表（fail-closed，不编造官方放假/补班）。
+  final effectiveHolidays = holidays ?? IcsHolidayProvider(ics);
+  // 仅当未注入时预热内部实例（ICS 本地缓存，首次命令调用前通常完成）；异常由 warm
+  // 内部 [DEGRADE] 处理，不向上抛。已注入时由调用方负责预热。
+  if (holidays == null) {
+    (effectiveHolidays as IcsHolidayProvider).warm();
+  }
+
   return CategoryToolFace(<CategoryTool>[
     buildMathTool(),
     buildGeoTool(
@@ -112,7 +122,7 @@ McpToolFace buildDefaultToolFace({
       writeGateway,
       markers: markerStore,
       feeds: ics,
-      holidays: cnHolidayBundled,
+      holidays: effectiveHolidays,
     ),
   ]);
 }

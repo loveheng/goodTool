@@ -176,7 +176,7 @@ class ExpressionLexer {
             k++;
           }
           confirmed = k + 2 <= text.length &&
-              text.substring(k, k + 2) == 'to' &&
+              _isConvertKeyword(text.substring(k, k + 2)) &&
               (k + 2 == text.length || !_isIdentPart(text[k + 2]));
         }
         if (confirmed) {
@@ -199,7 +199,7 @@ class ExpressionLexer {
         }
         final name = text.substring(start, i);
         tokens.add(Token(
-          type: name == 'to' ? TokenType.to : TokenType.ident,
+          type: _isConvertKeyword(name) ? TokenType.to : TokenType.ident,
           start: start,
           end: i,
           text: name,
@@ -243,6 +243,10 @@ class ExpressionLexer {
 
     return LexResult.ok(tokens, s);
   }
+
+  /// 内联换算连接字：`to` 与中文 `换算` 同义（calculator.md「中文映射」——
+  /// 均为 2 字符，前瞻边界检查共用同一长度）。
+  static bool _isConvertKeyword(String word) => word == 'to' || word == '换算';
 
   static bool _isSpace(String c) =>
       c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\u3000';

@@ -5,13 +5,14 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:good_template/mcp/geo_provider.dart';
-import 'package:good_template/mcp/settings_kv.dart';
-import 'package:good_template/mcp/tool_face.dart';
-import 'package:good_template/action/command_gateway.dart';
-import 'package:good_template/mcp/weather_provider.dart';
-import 'package:good_template/ports.dart';
-import 'package:good_template/tool_face_assembly.dart';
+import 'package:goodtools/mcp/geo_provider.dart';
+import 'package:goodtools/mcp/settings_kv.dart';
+import 'package:goodtools/mcp/tool_face.dart';
+import 'package:goodtools/action/command_gateway.dart';
+import 'package:goodtools/mcp/weather_provider.dart';
+import 'package:goodtools/ports.dart';
+import 'package:goodtools/tool_face_assembly.dart';
+import 'package:goodtools/tools/calendar/holiday_table.dart';
 
 void main() {
   late SettingsKv kv;
@@ -44,9 +45,9 @@ void main() {
       expect(names, ['math_utility', 'geo', 'weather', 'system_pim']);
     });
 
-    test('action 合计 26 项（math 3 + geo 8 + weather 1 + pim 14），与矩阵闭环', () {
+    test('action 合计 27 项（math 4 + geo 8 + weather 1 + pim 14），与矩阵闭环', () {
       expect(actionsOf('math_utility'),
-          ['calc_eval', 'unit_convert', 'unit_list']);
+          ['calc_eval', 'unit_convert', 'unit_list', 'list_stats']);
       expect(actionsOf('geo').length, 8);
       expect(actionsOf('weather'), ['weather_forecast']);
       expect(actionsOf('system_pim'), hasLength(14));
@@ -67,6 +68,18 @@ void main() {
           face().schemas().map((s) => s['description'] as String).join('\n');
       expect(desc, contains('geo_distance('));
       expect(desc, contains('calc_eval('));
+    });
+
+    test('四个聚合工具均声明 visibility=shared（宿主可收进共享面）', () {
+      // SDK 0.2.0 可见性标记：本仓 tools/list 由 Dart 侧产出（Kotlin 侧全量接管
+      // 路由，反射派发器扫不到 @McpTool），故 _meta.goodhub.visibility 必由本侧
+      // 下发——漏发即宿主按 default-deny 把四个域工具全判为私有。
+      final schemas = face().schemas();
+      expect(schemas, hasLength(4));
+      for (final s in schemas) {
+        final goodhub = (s['_meta'] as Map)['goodhub'] as Map;
+        expect(goodhub['visibility'], 'shared', reason: '${s['name']} 未标 shared');
+      }
     });
   });
 
@@ -161,8 +174,9 @@ void main() {
           contains('PERMISSION_DENIED'));
     });
 
-    test('system_pim 纯函数 R 档经装配可用（节假日表真实）', () async {
-      final r = await face().call('system_pim', {
+    test('system_pim 纯函数 R 档经装配可用（内置节假日表注入生效）', () async {
+      final r = await buildDefaultToolFace(kv: kv, holidays: cnHolidayBundled)
+          .call('system_pim', {
         'action': 'calendar_workdays_between',
         'params': {
           'startDate': '2026-10-01',

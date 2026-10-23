@@ -7,10 +7,10 @@ library;
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:good_template/geo/coord_convert.dart';
-import 'package:good_template/mcp/category_tool_face.dart';
-import 'package:good_template/mcp/geo_provider.dart';
-import 'package:good_template/tools/geo_tool.dart';
+import 'package:goodtools/geo/coord_convert.dart';
+import 'package:goodtools/mcp/category_tool_face.dart';
+import 'package:goodtools/mcp/geo_provider.dart';
+import 'package:goodtools/tools/geo_tool.dart';
 
 const beijingWgs = GeoPoint(39.9042, 116.4074);
 

@@ -23,6 +23,29 @@ class SettingsActors {
     gateway.registerUser('user_set_api_key', setApiKey);
     gateway.registerUser('user_set_privacy_switch', setPrivacySwitch);
     gateway.registerUser('user_set_identity_profile', setIdentityProfile);
+    gateway.registerUser('user_set_setting', setSetting);
+    gateway.registerUser('user_save_draft', saveDraft);
+  }
+
+  /// 保存计算器草稿台内容（UI 会话态持久化，非设置项）。
+  ///
+  /// 写后回**写入确认**（content 原文长度，standards §5.2 快照语义的轻量
+  /// 变体——草稿无回显面，只确认落盘）。
+  Future<UserCommandResult> saveDraft(Command cmd) async {
+    final content = cmd.payload['content'];
+    if (content is! String) {
+      return const UserCommandResult.failure(
+        'DRAFT_CONTENT_INVALID',
+        '缺少必填参数 content（字符串，各块以 \\n 连接）',
+        suggestion: 'content 取草稿台全部块文本的 \\n 拼接',
+      );
+    }
+    await repository.kv
+        .settingsSet(<String, String>{SettingsKeys.calculatorDraft: content});
+    return UserCommandResult.success(<String, Object?>{
+      'saved': true,
+      'lines': content.split('\n').length,
+    });
   }
 
   /// 设置后端 API Key：provider ∈ {`amap`, `qweather`}。
@@ -101,6 +124,35 @@ class SettingsActors {
     }
     await repository.kv
         .settingsSet({SettingsKeys.identityPrompt: text.trim()});
+    return UserCommandResult.success(await repository.readSnapshot());
+  }
+
+  /// 设置非凭证类可读键（白名单：`SettingsKeys.plainReadableKeys`）。
+  ///
+  /// 空串 = 清除（视为未配置）。用于天气数据主机 / 预设城市等用户自设项；
+  /// 与 `setApiKey`（凭证类）分工，本命令不碰任何凭证。
+  Future<UserCommandResult> setSetting(Command cmd) async {
+    final key = cmd.payload['key'];
+    if (key is! String || key.trim().isEmpty) {
+      return UserCommandResult.failure(
+        'MISSING_ARGUMENT',
+        '缺少 key',
+        suggestion: '可选键：${SettingsKeys.plainReadableKeys.join(' / ')}',
+      );
+    }
+    final name = key.trim();
+    if (!SettingsKeys.plainReadableKeys.contains(name)) {
+      return UserCommandResult.failure(
+        'INVALID_ARGUMENT',
+        '不可经此写入的键：$name',
+        suggestion: '仅允许：${SettingsKeys.plainReadableKeys.join(' / ')}',
+      );
+    }
+    final value = cmd.payload['value'];
+    if (value is! String) {
+      return UserCommandResult.failure('MISSING_ARGUMENT', '缺少 value（字符串）');
+    }
+    await repository.kv.settingsSet(<String, String>{name: value.trim()});
     return UserCommandResult.success(await repository.readSnapshot());
   }
 

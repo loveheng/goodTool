@@ -30,6 +30,8 @@ const Set<String> _routeModes = {'driving', 'walking', 'bicycling', 'transit'};
 /// 同步的，而 KV 读配置是异步的，故把读取推到子操作执行时；副作用是用户在设置里
 /// 补填 Key 后**无需重建工具面**即生效（与 [AmapHttpProvider] 同范式）。
 /// 两个 reader 缺省（null）⇒ 静态图返回 `ERR_AMAP_KEY_MISSING`（fail-closed）。
+///
+/// [ToolVisibility.shared]：本域属四大聚合工具之一，声明允许宿主收进共享面。
 CategoryTool buildGeoTool(
   LocationSensorProvider sensor,
   GeoHttpProvider http, {
@@ -41,6 +43,7 @@ CategoryTool buildGeoTool(
     '地理与地图：当前定位 / 正逆地理编码 / POI 检索 / 多模态路径规划 / 静态图 / 指南针 / 测距。'
     '入参坐标可用 coordSystem 声明 WGS84|GCJ02（GPS 原生默认 WGS84），内核在调用高德前统一归一化到 GCJ-02。',
     null,
+    visibility: ToolVisibility.shared,
   );
   cat.register(_GeoCurrentSub(sensor));
   cat.register(_GeoCompassSub(sensor));

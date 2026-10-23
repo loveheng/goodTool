@@ -6,14 +6,14 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:good_template/mcp/calendar_provider.dart';
-import 'package:good_template/mcp/pii_mask.dart';
-import 'package:good_template/mcp/settings_keys.dart';
-import 'package:good_template/mcp/settings_kv.dart';
-import 'package:good_template/ports.dart';
-import 'package:good_template/repository/settings_repository.dart';
-import 'package:good_template/service/composite_calendar_provider.dart';
-import 'package:good_template/service/ics_feed_provider.dart';
+import 'package:goodtools/mcp/calendar_provider.dart';
+import 'package:goodtools/mcp/pii_mask.dart';
+import 'package:goodtools/mcp/settings_keys.dart';
+import 'package:goodtools/mcp/settings_kv.dart';
+import 'package:goodtools/ports.dart';
+import 'package:goodtools/repository/settings_repository.dart';
+import 'package:goodtools/service/composite_calendar_provider.dart';
+import 'package:goodtools/service/ics_feed_provider.dart';
 
 const String _kPiiIcs = '''
 BEGIN:VCALENDAR

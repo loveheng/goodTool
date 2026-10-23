@@ -15,16 +15,27 @@ import 'action/command_gateway.dart';
 import 'mcp/geo_provider.dart';
 import 'mcp/pii_mask.dart';
 import 'mcp/settings_keys.dart';
+// Binder 后台 entrypoint 纳入编译根（import 闭包）：它不被 UI 引用，若不 import
+// 则 kernel_blob 不含该库，headless 引擎 executeDartEntrypoint 报
+// Dart_LookupLibrary not found → "Dart entrypoint 超时"（真机实证）。
+// ignore: unused_import
+import 'mcp_binder_entrypoint.dart';
+import 'repository/favorite_repository.dart';
 import 'repository/marker_repository.dart';
 import 'repository/settings_repository.dart';
+import 'service/amap_http_provider.dart';
 import 'service/composite_calendar_provider.dart';
+import 'service/favorite_place_store.dart';
+import 'service/geo_favorite_actors.dart';
 import 'service/ics_feed_provider.dart';
+import 'tools/calendar/ics_holiday_provider.dart';
 import 'service/keystore_secret_store.dart';
 import 'service/marker_store.dart';
 import 'service/mcp_controller.dart';
 import 'service/persistent_kv.dart';
 import 'service/settings_actors.dart';
 import 'service/system_calendar_port.dart';
+import 'service/system_location_sensor.dart';
 import 'service/weather.dart';
 import 'tool_face_assembly.dart';
 import 'ui/calculator_page.dart';
@@ -38,7 +49,8 @@ import 'ui/theme.dart';
 import 'ui/weather_page.dart';
 import 'ui_ports/calculator_port.dart';
 import 'ui_ports/calendar_port.dart';
-import 'ui_ports/geo_port.dart';
+import 'ui_ports/draft_port.dart';
+import 'ui_ports/geo_lbs_port.dart';
 import 'ui_ports/settings_port.dart';
 import 'ui_ports/status_port.dart';
 import 'ui_ports/weather_port.dart';
@@ -99,15 +111,25 @@ class _BootPageState extends State<_BootPage> {
   }
 
   /// 装配全链（装配件职责，不含业务逻辑）。
+  ///
+  /// 逐段计时打点：启动卡「装配中…」时跑一次 logcat 即可定位慢点
+  /// （grep "[boot-timing]"）。
   static Future<_AppScope> _assemble() async {
+    final sw = Stopwatch()..start();
+    void mark(String step) =>
+        debugPrint('[boot-timing] $step: ${sw.elapsedMilliseconds}ms');
     // ① 存储：普通设置持久化，凭证走安全存储抽象（Keystore 持密钥、密文落专用
     // SharedPreferences——进程级、跨 isolate 可见，重启不丢、零明文留痕）。
     final plain = await SharedPrefsKv.open();
+    mark('SharedPreferences.open');
     final kv = SecretAwareKv(
       plain: plain,
       secrets: const KeystoreSecretStore(),
     );
     final markerStore = await SharedPrefsMarkerStore.open();
+    mark('MarkerStore.open');
+    final favoriteStore = await SharedPrefsFavoritePlaceStore.open();
+    mark('FavoritePlaceStore.open');
 
     // ② 日历合并源：ICS 订阅 + 系统日历（UI 与工具面**共用同一实例**）；
     // 脱敏开关态经 KV 注入合并源（U12a）——两路（ICS/系统）同开关语义。
@@ -118,24 +140,43 @@ class _BootPageState extends State<_BootPage> {
           piiMaskEnabledBy(await kv.settingsGet(SettingsKeys.privacyMaskPii)),
     );
 
+    // ②½ 节假日来源：ICS 驱动（订阅名称含『节假日』的源）。运行时预热（ICS 已本地
+    // 缓存，快）后注入 UI 与命令面，二者共享同一实例与预热结果——不再写死内置表。
+    final holidays = IcsHolidayProvider(feeds);
+    await holidays.warm();
+
     // ③ 写门禁网关：用户设置 Actor 登记在**用户侧注册表**（AI 不可触达）。
     final gateway = CommandGateway();
     final repository = SettingsRepository(kv: kv);
     SettingsActors(repository: repository).register(gateway);
+    // 收藏地点用户侧 Actor（AI 不可触达）：写端口只在此登记链持有。
+    GeoFavoriteActors(
+      store: favoriteStore,
+      writer: favoriteStore,
+    ).register(gateway);
 
     // ④ 工具面：与 Binder 生产通道共用同一装配（standards §3.3 S7 纪律）。
     // 天气源与工具面**共用同一 QWeatherProvider 实例**——否则 UI 与 Agent 各拉
     // 一次，频控与缓存分裂（同日历合并源纪律）。
+    // 定位源同样单实例共用：MCP geo_current / 地图页「我的位置」/ 天气回退链
+    // 末级 / 状态页就绪项四者同源（geolocator 系统定位，2026-10-22 接入）。
+    final locationSensor = const SystemLocationSensorProvider();
     final weather = QWeatherProvider(
       kv,
-      sensor: const NullLocationSensorProvider(),
+      sensor: locationSensor,
     );
+    // 高德 HTTP 源**共用同一实例**：MCP geo 工具面与 UI GeoLbsPort（地图页
+    // 搜索/路线）同源出网——Key 懒读机制同一份，频控与失败口径同源。
+    final amapHttp = AmapHttpProvider(() => kv.settingsGet(SettingsKeys.amapWebKey));
     final toolFace = buildDefaultToolFace(
       kv: kv,
       gateway: gateway,
       markers: markerStore,
       feeds: feeds,
+      holidays: holidays,
       weather: weather,
+      http: amapHttp,
+      sensor: locationSensor,
     );
 
     // ⑤ 总控 + 前台服务保活 + HTTP 回环调试通道。
@@ -144,25 +185,33 @@ class _BootPageState extends State<_BootPage> {
       toolFaceFactory: () => toolFace,
     );
     await controller.regenerateToken();
-    await controller.enable();
-    debugPrint('[goodTools] MCP endpoint: ${controller.endpoint}');
+    mark('regenerateToken');
+    // HTTP 调试服务**不随启动自启**（2026-10-20 产品决策）：MCP HTTP 仅调试用，
+    // 入口收在设置页「关于」长按进的服务控制页（mcp_service_page.dart），手动开启；
+    // 生产通道走 Binder 引擎（mcp_binder_entrypoint.dart），与本控无关。
+    debugPrint('[boot-timing] total: ${sw.elapsedMilliseconds}ms');
 
     return _AppScope(
       controller: controller,
       settingsPort: SettingsPort(repository, gateway),
+      draftPort: DraftPort(repository, gateway),
       statusPort: StatusPort(
         controller: controller,
         repository: repository,
-        location: const NullLocationSensorProvider(),
+        location: locationSensor,
         feeds: feeds,
       ),
       calculatorPort: const CalculatorPort(),
-      geoPort: const GeoPort(),
+      geoLbsPort: GeoLbsPort(http: amapHttp),
+      locationSensor: locationSensor,
+      favoriteRepository: FavoriteRepository(store: favoriteStore),
       calendarPort: CalendarPort(
         feeds: feeds,
         markers: MarkerRepository(store: markerStore),
+        holidays: holidays,
       ),
       weatherPort: WeatherPort(weather),
+      gateway: gateway,
     );
   }
 
@@ -185,8 +234,13 @@ class _BootPageState extends State<_BootPage> {
       dashboard: DashboardPage(port: scope.statusPort),
       capabilities: CapabilitiesPage(
         pages: <AppDomain, Widget>{
-          AppDomain.calculator: const CalculatorPage(),
-          AppDomain.geo: const GeoPage(),
+          AppDomain.calculator: CalculatorPage(port: scope.draftPort),
+          AppDomain.geo: GeoPage(
+            lbsPort: scope.geoLbsPort,
+            favorites: scope.favoriteRepository,
+            gateway: scope.gateway,
+            locationSensor: scope.locationSensor,
+          ),
           AppDomain.calendar: CalendarPage(port: scope.calendarPort),
           AppDomain.weather: WeatherPage(port: scope.weatherPort),
         },
@@ -206,18 +260,34 @@ class _AppScope {
   const _AppScope({
     required this.controller,
     required this.settingsPort,
+    required this.draftPort,
     required this.statusPort,
     required this.calculatorPort,
-    required this.geoPort,
+    required this.geoLbsPort,
+    required this.locationSensor,
+    required this.favoriteRepository,
     required this.calendarPort,
     required this.weatherPort,
+    required this.gateway,
   });
 
   final McpController controller;
   final SettingsPort settingsPort;
+  final DraftPort draftPort;
   final StatusPort statusPort;
   final CalculatorPort calculatorPort;
-  final GeoPort geoPort;
+
+  /// LBS 端口（地图页搜索/四模态路线，与 MCP geo 工具面共用同一 HTTP 源）。
+  final GeoLbsPort geoLbsPort;
+
+  /// 定位源（系统定位；地图页「我的位置」与 MCP geo_current 共用）。
+  final LocationSensorProvider locationSensor;
+
+  /// 收藏地点只读聚合（R5；写经 [gateway] 用户侧注册表）。
+  final FavoriteRepository favoriteRepository;
   final CalendarPort calendarPort;
   final WeatherPort weatherPort;
+
+  /// 写门禁网关（用户侧注册表：设置 + 收藏地点，AI 不可触达）。
+  final CommandGateway gateway;
 }

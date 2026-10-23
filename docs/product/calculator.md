@@ -83,6 +83,7 @@ updated: 2026-10-19
 - **数据存储（SI / IEC 显式区分）**：`iec_si` 模型，`MB`=10⁶、`MiB`=2²⁰ 字节。单位代号即意图，不靠全局开关；接口可选 `standard: "SI" | "IEC"` 仅作校验/提示。
 - **别名归一化（大小写/符号容错）**：入参先做 `小写 + 去空格/符号` 归一，再查别名表；归一化器集中维护 `℃→celsius`、`°c→celsius`、`℉→fahrenheit`、`m²→m2`、`sq ft→ft2` 等映射，未知单位基于归一化表做近邻匹配产出 `candidates`，避免直接抛 `UnknownUnitException`。
 - **内联 `to` 换算语法（解析策略）**：`calc_eval` 支持中缀 `to`（如 `320 km/h to m/s`）。词法识别 `to` 关键字后：① 前缀切片为「数值+单位」表达式、后缀切片为目标单位；② 提取数值与单位，分流转 `UnitConverter.convert`；③ 结果（如 `88.89 m/s`，数值 `88.8889`）可继续作为值参与后续运算（如 `v = 320 km/h to m/s`）。主链路出现裸单位四则仍受「量纲混合运算边界」约束报 `UNEXPECTED_UNIT_IN_EXPR`。
+- **连接字与中文映射（2026-10-21）**：连接字 `to` / `换算` 同义（如 `10 公里 换算 英里`）；单位名可用注册表**中文别名**（公里/英里/公斤/摄氏度/亩/斤等），词法层标识符集含 CJK，`evalLine` 行内正则同步收 CJK 与三连接字（`to|in|换算`）。**出参回显规范单位 id**（如 `英里` → `mi`），与 `unit_convert` MCP 口径一致，不回显原文别名。
 
 ### 聚合函数与变量上下文（`calc_eval` 扩展）
 
@@ -94,6 +95,16 @@ updated: 2026-10-19
   - v1 核心引擎**不实现**通用符号量纲代数（不支持 `100 km / 2 h` 自动推导 `50 km/h`，亦不支持 `5 m * 3 m = 15 m²`）。
   - 算术主链路中带单位的语法**仅限** `<值> <单位> to <单位>` 单一换算闭环；主链路出现裸单位参与四则（`UNEXPECTED_UNIT_IN_EXPR`）须报错，避免一期引入沉重量纲推导系统。v2 再按需演进量纲代数。
 
+### 高精度列表统计（`list_stats`）
+
+- **动机**：`sort / max / min` 对小数组 Agent 可自行完成，工具价值在**长列表**与**高精度数值**（如 `"0.123456789012345678"` 这类超出 double 无损表示的数字串，LLM 直接比较/排序必然失真）——故列表统计**全程 Decimal 内核，不先转 double**。
+- **入参**：`{values: number[]|string[], op: string, order?, precision?}`；`op ∈ sort / max / min / sum / mean / median`。
+  - `sort`：按 `order`（`asc` 缺省 / `desc`）排序，返回格式化数组 + 无损数组；
+  - `max` / `min`：附首达下标 `index`（比较在 Decimal 上进行）；
+  - `sum` / `mean`：`mean` 除法走 `scaleOnInfinitePrecision: 30` 后按 `precision`（缺省 12）舍入；
+  - `median`：先排序，偶数个取中间两数 Decimal 平均。
+- **严格性纪律**：逐元素解析，任一元素不可解析即返回 `INVALID_ARGUMENT`（带下标 `values[i]`），**禁静默跳过或兜底默认值**；`values` 空数组返回 `MISSING_ARGUMENT`。
+
 ## MCP 工具面（形态）
 
 | 工具 | 入参 | 出参 | 说明 |
@@ -101,6 +112,7 @@ updated: 2026-10-19
 | `calc_eval` | `{expr: string, precision?, roundingMode?, angleMode?, context?}` | `{success, result, numericValue, expression, warning?, error?}` | 单行公式求值；支持内联 `to` 换算与多参聚合 `sum/avg/count`；`context` 注入变量供 Agent 链式计算；双轨出参供下游免解析传递 |
 | `unit_convert` | `{value: number\|string, from: string, to: string, precision?, standard?}` | `{success, result, numericValue, fromUnit, toUnit, formula, warning?, error?}` | 维度双向换算；`formula` 输出过程，`warning` 承载非致命提示，未知单位附 `candidates` 自愈 |
 | `unit_list` *(自省)* | `{dimension?: string, search?: string}` | `{dimensions: [...]}` 或 `{units: [...]}` | 分级自省省 Token：无参返回量纲概览，带参展开单位元数据 |
+| `list_stats` | `{values: number\|string[], op: string, order?, precision?}` | `{success, op, count, result, numericValue?, index?, error?}` | 高精度列表统计（sort/max/min/sum/mean/median）；Decimal 内核全程不转 double，双轨出参供链式传递 |
 
 ### `calc_eval`
 
@@ -209,6 +221,7 @@ MCP Server 注册工具时，`description` 与 `inputSchema` 即 LLM 的唯一�
   - `inputSchema.properties`：`expr`(string, required, 描述含示例)、`precision`(integer, 小数位)、`roundingMode`(enum halfUp/floor/ceil/halfEven, default halfUp)、`angleMode`(enum rad/deg, default rad)、`context`(object, 种子变量)。
 - **`unit_convert`**：description 须列出支持的维度大类、强调别名容错（`km/h`/`公里每小时`/`celsius`/`℃` 均可）、并提示未知单位时看 `error.candidates` 自愈。
 - **`unit_list`**：description 说明无参返回量纲概览、传 `dimension`/`search` 展开细节，引导 Agent 按需二次查询以省 Token。
+- **`list_stats`**：description 须强调 Decimal 高精度内核（小数组无需调用，长列表/高精度数值专用）、`op` 六值枚举与 `values` 元素支持高精度数字串；非法 `op` 附 `candidates` 自愈。
 
 ## 结构化错误模型（`error` 字段）
 

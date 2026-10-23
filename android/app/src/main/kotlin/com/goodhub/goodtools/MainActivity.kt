@@ -1,4 +1,4 @@
-package com.goodhub.good_template
+package com.goodhub.goodtools
 
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine

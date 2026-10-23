@@ -1,6 +1,6 @@
 # goodTools · 会话初始化与架构红线
 
-Flutter（3.47.5 stable）写的 Android 常驻壳：前台服务保活 + 内嵌 MCP 服务端内核，自带 R2 自更新通道。pubspec `name: good_template`，Android `applicationId = com.goodhub.good_template`。
+Flutter（3.47.5 stable）写的 Android 常驻壳：前台服务保活 + 内嵌 MCP 服务端内核，自带 R2 自更新通道。pubspec `name: goodtools`，Android `applicationId = com.goodhub.goodtools`。
 
 ## 会话初始化（新窗口开场执行一次）
 - 开场含「继续/开工/初始化」或首次指令时：先跑 `toolbox run-hooks bootstrap --quiet`（非 0 仅附一行 ⚠，不阻塞；无 toolbox 跳过）→ 跑 `toolbox run panel`（无 toolbox 则读 context/CURRENT → 绑定 epic 的 memory.md 断点）→ 输出会话绑定卡（域/类型/挂载/任务全景/状态）→ 按断点开工或等指令；多任务切换 `::board`（绑定纪律与恢复规约：~/.agents/skills/dev-loop/SKILL.md §3，存在时以其为准）。

@@ -6,7 +6,7 @@ import '../mcp/secret_store.dart';
 
 /// 与 Kotlin 侧 `SecretStoreChannel.kt` 保持一致的通道名（勿单方改动）。
 const MethodChannel kSecretStoreChannel =
-    MethodChannel('com.goodhub.good_template/secret_store');
+    MethodChannel('com.goodhub.goodtools/secret_store');
 
 /// 凭证安全存储的**平台实现**（ui-console U5 收尾，替掉内存缺省）。
 ///
