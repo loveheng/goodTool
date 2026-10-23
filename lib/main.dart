@@ -27,6 +27,7 @@ import 'service/amap_http_provider.dart';
 import 'service/composite_calendar_provider.dart';
 import 'service/favorite_place_store.dart';
 import 'service/geo_favorite_actors.dart';
+import 'service/geo_last_location_actor.dart';
 import 'service/ics_feed_provider.dart';
 import 'tools/calendar/ics_holiday_provider.dart';
 import 'service/keystore_secret_store.dart';
@@ -51,6 +52,7 @@ import 'ui_ports/calculator_port.dart';
 import 'ui_ports/calendar_port.dart';
 import 'ui_ports/draft_port.dart';
 import 'ui_ports/geo_lbs_port.dart';
+import 'ui_ports/geo_last_location_port.dart';
 import 'ui_ports/settings_port.dart';
 import 'ui_ports/status_port.dart';
 import 'ui_ports/weather_port.dart';
@@ -154,6 +156,8 @@ class _BootPageState extends State<_BootPage> {
       store: favoriteStore,
       writer: favoriteStore,
     ).register(gateway);
+    // 地图页「上次定位点」用户侧 Actor（AI 不可触达）：同上纪律。
+    GeoLastLocationActor(kv: kv).register(gateway);
 
     // ④ 工具面：与 Binder 生产通道共用同一装配（standards §3.3 S7 纪律）。
     // 天气源与工具面**共用同一 QWeatherProvider 实例**——否则 UI 与 Agent 各拉
@@ -195,6 +199,7 @@ class _BootPageState extends State<_BootPage> {
       controller: controller,
       settingsPort: SettingsPort(repository, gateway),
       draftPort: DraftPort(repository, gateway),
+      lastLocationPort: GeoLastLocationPort(repository, gateway),
       statusPort: StatusPort(
         controller: controller,
         repository: repository,
@@ -240,6 +245,7 @@ class _BootPageState extends State<_BootPage> {
             favorites: scope.favoriteRepository,
             gateway: scope.gateway,
             locationSensor: scope.locationSensor,
+            lastLocation: scope.lastLocationPort,
           ),
           AppDomain.calendar: CalendarPage(port: scope.calendarPort),
           AppDomain.weather: WeatherPage(port: scope.weatherPort),
@@ -261,6 +267,7 @@ class _AppScope {
     required this.controller,
     required this.settingsPort,
     required this.draftPort,
+    required this.lastLocationPort,
     required this.statusPort,
     required this.calculatorPort,
     required this.geoLbsPort,
@@ -274,6 +281,9 @@ class _AppScope {
   final McpController controller;
   final SettingsPort settingsPort;
   final DraftPort draftPort;
+
+  /// 地图页「上次定位点」读/写适配（读经 Repository，写经网关用户侧）。
+  final GeoLastLocationPort lastLocationPort;
   final StatusPort statusPort;
   final CalculatorPort calculatorPort;
 

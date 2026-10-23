@@ -16,6 +16,7 @@ import '../repository/favorite_repository.dart';
 // LatLng 与 geo_lbs_port 的同名类型解耦——本页坐标一律用 latlong2 的 LatLng，
 // 端口视图的 RouteStepView.polyline（端口侧 LatLng）仅取字段不取构造。
 import '../ui_ports/geo_lbs_port.dart' hide LatLng;
+import '../ui_ports/geo_last_location_port.dart';
 import '../ui_ports/geo_port.dart';
 import 'components/app_components.dart';
 import 'tokens/app_tokens.dart';
@@ -33,12 +34,16 @@ class GeoPage extends StatefulWidget {
     required this.favorites,
     required this.gateway,
     required this.locationSensor,
+    required this.lastLocation,
   });
 
   final GeoLbsPort lbsPort;
 
   /// 定位源（系统定位；端口出 WGS-84，画布前归一化 GCJ-02）。
   final LocationSensorProvider locationSensor;
+
+  /// 上次定位点（读/写经 Port → Repository/网关；进场先恢复再刷新定位）。
+  final GeoLastLocationPort lastLocation;
 
   final FavoriteRepository favorites;
   final CommandGateway gateway;
@@ -131,8 +136,16 @@ class _GeoPageState extends State<GeoPage> {
     // 必须在首帧后调用：_locateMe 会驱动 MapController，首帧前 controller 未挂载。
     _locating = true;
     _reloadFavorites();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _locateMe();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      // 先恢复上次定位点（有则立即把相机带过去，不回占位原点），再刷新定位。
+      // 恢复读数只动相机不置蓝点——蓝点语义是「系统定位确认的位置」。
+      final last = await widget.lastLocation.read();
+      if (!mounted) return;
+      if (last != null && _myLocation == null) {
+        _mapController.move(LatLng(last.lat, last.lng), 16);
+      }
+      await _locateMe();
     });
   }
 
@@ -776,6 +789,12 @@ class _GeoPageState extends State<GeoPage> {
       _myAccuracy = reading.accuracy > 0 ? reading.accuracy : null;
     });
     _fitTo(<LatLng>[_myLocation!], singleZoom: 16);
+    // 记住本次定位点（GCJ-02），下次进场先恢复到这里再刷新（不回占位原点）。
+    // 写失败不影响本页使用（记忆只是体验优化），但留存结构化日志可观测。
+    final saved = await widget.lastLocation.save(p.lat, p.lng);
+    if (!saved.ok) {
+      debugPrint('[LOC] 上次定位点记忆写入失败: ${saved.errorCode}');
+    }
   }
 
   // ---- 底部上滑面板（搜索框常驻 + 功能面） ----

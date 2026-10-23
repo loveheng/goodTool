@@ -41,6 +41,10 @@ class SettingsKeys {
   /// 不进 userWritable/回显枚举，仅 `user_save_draft` 命令写）。
   static const String calculatorDraft = 'calculator_draft';
 
+  /// 地图页上次定位点（`'lat,lng'` GCJ-02 文本；UI 会话态，非设置项——
+  /// 不进 userWritable/回显枚举，仅 `user_geo_save_last_location` 命令写）。
+  static const String geoLastLocation = 'geo_last_location';
+
   /// 全部**用户可在设置页改写**的键。
   static const List<String> userWritable = <String>[
     amapWebKey,

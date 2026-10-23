@@ -20,3 +20,10 @@ class UserGeoFavoriteDeleteCommand extends Command {
   const UserGeoFavoriteDeleteCommand(Map<String, Object?> payload)
       : super('user_geo_favorite_delete', payload);
 }
+
+/// 记住地图页上次定位点（`{lat, lng}`，GCJ-02）——UI 会话态持久化，
+/// 供下次进场先恢复到上次位置再刷新定位（不回占位原点）。
+class UserGeoSaveLastLocationCommand extends Command {
+  const UserGeoSaveLastLocationCommand(Map<String, Object?> payload)
+      : super('user_geo_save_last_location', payload);
+}
