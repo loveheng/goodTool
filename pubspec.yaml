@@ -1,4 +1,4 @@
-name: good_template
+name: goodtools
 description: "goodhub 服务端模板：Android 常驻壳 + 内嵌 MCP 服务端内核。新 app 以此起底，实现端口 + 注册工具面即可上工。"
 publish_to: 'none'
 version: 0.1.0+34
@@ -25,6 +25,13 @@ dependencies:
   timezone: ^0.10.0
   # 农历 / 节气引擎（P2-③）：纯 Dart 无第三方依赖，1900–2100 公农历双向换算、生肖、节气。
   lunar: ^1.7.8
+
+  # 交互地图画布（decisions.md 2026-10-22：flutter_map 结构性替换，amap_flutter_map 退役）：
+  # 纯 Dart 渲染零原生依赖，底图走高德 XYZ 瓦片源（未公开承诺接口，不可用时退静态图降级预览）。
+  flutter_map: ^8.2.2
+  # LatLng/距离计算（flutter_map 生态标准坐标类型）。
+  latlong2: ^0.9.1
+  geolocator: ^14.1.2
 
 dev_dependencies:
   flutter_test:

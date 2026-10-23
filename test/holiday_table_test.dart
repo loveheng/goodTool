@@ -4,17 +4,18 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:good_template/action/command_gateway.dart';
-import 'package:good_template/mcp/category_tool_face.dart';
-import 'package:good_template/tools/calendar/date_math.dart';
-import 'package:good_template/tools/calendar/holiday_table.dart';
-import 'package:good_template/tools/system_pim_tool.dart';
+import 'package:goodtools/action/command_gateway.dart';
+import 'package:goodtools/mcp/category_tool_face.dart';
+import 'package:goodtools/tools/calendar/date_math.dart';
+import 'package:goodtools/tools/calendar/holiday_table.dart';
+import 'package:goodtools/tools/system_pim_tool.dart';
 
 void main() {
   Map<String, Object?> jsonOf(SubActionResult r) =>
       jsonDecode(r.content.first['text']! as String) as Map<String, Object?>;
 
-  CategoryTool tool() => buildSystemPimTool(CommandGateway());
+  CategoryTool tool() =>
+      buildSystemPimTool(CommandGateway(), holidays: cnHolidayBundled);
 
   group('内置表逐字对账（国务院办公厅 2026 年通知）', () {
     test('版本号与条目数（法定假 33 天 + 调休补班 6 天）', () {
@@ -109,7 +110,7 @@ void main() {
     });
   });
 
-  group('端到端（经 system_pim 工具面，默认内置表生效）', () {
+  group('端到端（经 system_pim 工具面，注入内置表生效）', () {
     test('workdays_between：国庆前后（10-01~10-11）= 11 天 / 3 个工作日',
         () async {
       final j = jsonOf(await tool().call('calendar_workdays_between', {

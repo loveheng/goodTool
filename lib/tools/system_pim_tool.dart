@@ -25,7 +25,6 @@ import '../action/command_gateway.dart';
 import '../mcp/calendar_provider.dart';
 import '../mcp/category_tool_face.dart';
 import 'calendar/date_math.dart';
-import 'calendar/holiday_table.dart';
 import 'calendar/lunar_math.dart';
 import 'calendar/marker_math.dart';
 import 'calendar/resolve_expression.dart';
@@ -38,13 +37,17 @@ const int calendarMaxRangeDays = 90;
 /// 公开入口：构建 `system_pim` 领域网关（日历 + 标记 + 时间推演）。
 ///
 /// [gateway] 为写门禁端口（W 档必经）；[feeds] / [markers] 为 P2 真实源，
-/// 缺省 null ⇒ 相关 R 档 fail-closed；[holidays] 默认内置 **2026 年法定节假日表**
-/// （数据逐字照录国务院办公厅通知，见 `calendar/holiday_table.dart`）。
+/// 缺省 null ⇒ 相关 R 档 fail-closed；[holidays] 默认 **空表**
+/// （[EmptyHolidayProvider]：workdays 仅跳过周末，不编造官方放假 / 补班判断），
+/// 实际由装配注入 ICS 驱动的 [IcsHolidayProvider]（订阅名称含『节假日』的 ICS 源）。
+/// 内置 2026 表（[cnHolidayBundled]）仍保留为可注入的确定性表 / OTA 种子。
+///
+/// [ToolVisibility.shared]：本域属四大聚合工具之一，声明允许宿主收进共享面。
 CategoryTool buildSystemPimTool(
   CommandGateway gateway, {
   CalendarFeedProvider? feeds,
   CalendarMarkerStore? markers,
-  HolidayProvider holidays = cnHolidayBundled,
+  HolidayProvider holidays = const EmptyHolidayProvider(),
   DeviceTimezoneProvider deviceTz = const UtcTimezoneProvider(),
 }) {
   final cat = CategoryTool(
@@ -54,6 +57,7 @@ CategoryTool buildSystemPimTool(
     '定位是「看」与「算」，**不做独立会议 / 日程管理**（参会人、会议链接由独立日程 App 承接）。'
     '写操作（订阅 / 退订 / 刷新 / 增删标记）属用户委托写，须会话已鉴权。',
     gateway,
+    visibility: ToolVisibility.shared,
   );
   // R 档 · 已实现（纯函数）
   cat.register(_CalendarDateCalcSub(holidays));

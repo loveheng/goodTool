@@ -7,7 +7,6 @@ library;
 
 import '../../mcp/calendar_provider.dart';
 import 'date_math.dart';
-import 'holiday_table.dart';
 import 'lunar_math.dart';
 
 /// 单次日展开上限（防一年 365 个「每日纪念日」把出参撑爆）。
@@ -264,6 +263,7 @@ class MarkerMath {
     return List.unmodifiable(cells);
   }
 
-  /// 默认内置表引用（工具层装配用）。
-  static const HolidayProvider defaultHolidays = cnHolidayBundled;
+  /// 默认节假日来源（工具层装配用）：空表，不编造官方放假 / 补班判断。
+  /// 实际由装配注入 ICS 驱动的 [IcsHolidayProvider]；内置 2026 表仍可作可注入选项。
+  static const HolidayProvider defaultHolidays = EmptyHolidayProvider();
 }

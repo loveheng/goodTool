@@ -24,10 +24,29 @@ class UserSetPrivacySwitchCommand extends Command {
       : super('user_set_privacy_switch', payload);
 }
 
-/// 设置脱敏开关（日程敏感字段过滤 / 模糊定位）。
+/// 设置身份画像。
 class UserSetIdentityProfileCommand extends Command {
   const UserSetIdentityProfileCommand(Map<String, Object?> payload)
       : super('user_set_identity_profile', payload);
+}
+
+/// 设置非凭证类可读键（如天气数据主机 `qweather_host`、预设城市 `weather_location`）。
+///
+/// 仅允许白名单（SettingsKeys.plainReadableKeys）内的键，防止 UI 越权写任意 KV；
+/// 与 `user_set_api_key`（凭证类）分工明确：本命令不碰任何凭证。
+class UserSetSettingCommand extends Command {
+  const UserSetSettingCommand(Map<String, Object?> payload)
+      : super('user_set_setting', payload);
+}
+
+/// 保存计算器草稿台内容（UI 会话态持久化，非设置项）。
+///
+/// 载荷 `{'content': string}`——各块单行文本以 `\n` 连接（块本身 maxLines:1，
+/// `\n` 无损）。走用户侧注册表：草稿是**用户本人的纸面**，AI 不可经工具面
+/// 触达（写入 / 清空均归用户自决）。
+class UserSaveDraftCommand extends Command {
+  const UserSaveDraftCommand(Map<String, Object?> payload)
+      : super('user_save_draft', payload);
 }
 
 /// 用户设置快照（写后回最新状态，standards §5.2；对齐读工具同形状）。

@@ -1,8 +1,8 @@
 // CompositeCalendarProvider（P2-⑦ source: system）单测：
 // 双路合并 / D1 排序 / includeSystem 语义 / warnings 显式化 / 脱敏 / feeds 与 refresh 透传。
 import 'package:flutter_test/flutter_test.dart';
-import 'package:good_template/mcp/calendar_provider.dart';
-import 'package:good_template/service/composite_calendar_provider.dart';
+import 'package:goodtools/mcp/calendar_provider.dart';
+import 'package:goodtools/service/composite_calendar_provider.dart';
 
 class _FakeIcs implements CalendarFeedProvider {
   @override

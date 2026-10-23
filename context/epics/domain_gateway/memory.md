@@ -24,7 +24,7 @@ last-merge: none
   4. **R7 启用靠退役而非白名单**：arch-guard 新增「tools 层禁 dispatch/admits 调用」扫描模式；白名单纪律是「只减不增」，故不为 `sample_tool_face.dart` 开口子——S7 提前退役该文件（原属 S8），连同 `ports.dart`/`overview.md`/`index.md` 引用一并清理，R7 零白名单启用。
   5. **注释也不得写出被禁调用写法**：R7 是 grep 级文本扫描，首跑命中 `geo_tool.dart`/`math_tool.dart` 注释里的 `.dispatch(`，改为「dispatch / admits 调用」措辞后通过（教训：机械门禁面前注释与代码同责）。
 
-- 2026-10-20 **S8 Contract 收尾完成（205 项单测 + analyze 0 issue + arch-guard 7 条）**：核查确认旧返回形状兼容层已无残留（`tool_face.dart` 契约即完整 result、`mcp_server.dart` 只透传、`smoke_test.dart` 无 sample 引用）。同轮收掉两处**模板/历史残留**：① `McpServer._dispatch` 的 `suggest_user_setting` 工具名嗅探特例——网关模式下线级已无该工具，分支只会静默失效，且违反「内核不感知业务工具名」；建议通道上移为宿主显式调用的 `McpController.pushSuggestion`（`suggestionStream` 语义不变，四份文档口径同步）。② `serverInfo.name` 与前台服务通知标题仍是模板项目名 `shiguang`/`拾光`，订正为 `good_template`/`goodTools`。
+- 2026-10-20 **S8 Contract 收尾完成（205 项单测 + analyze 0 issue + arch-guard 7 条）**：核查确认旧返回形状兼容层已无残留（`tool_face.dart` 契约即完整 result、`mcp_server.dart` 只透传、`smoke_test.dart` 无 sample 引用）。同轮收掉两处**模板/历史残留**：① `McpServer._dispatch` 的 `suggest_user_setting` 工具名嗅探特例——网关模式下线级已无该工具，分支只会静默失效，且违反「内核不感知业务工具名」；建议通道上移为宿主显式调用的 `McpController.pushSuggestion`（`suggestionStream` 语义不变，四份文档口径同步）。② `serverInfo.name` 与前台服务通知标题仍是模板项目名 `shiguang`/`拾光`，订正为 `goodtools`/`goodTools`。
 - **遗留（非 S8 范围，已登记域内待办）**：`McpServer._builtinInstructions` 仍是「拾光排程师」政策文案，与本 app 四大能力角色不符，会误导 LLM 客户端；重写需产品定位拍板，故只登记不擅改。
 
 - 2026-10-20 **四域矩阵闭环（P2-⑧ 装配）**：`system_pim`(14，含 5 个 W 档) 经 S6-P1→P2-⑧ 落地并装配进 `tool_face_assembly.dart`，线级 = **4 域 26 action**（24 个可用，`calendar_resolve_date` / `calendar_tz_convert` 为显式 fail-closed，待农历引擎与 `package:timezone`）。**`CommandGateway` 写门禁首次在生产路径闭环**（admits → validate → dispatch → Actor），arch-guard R7 从扫描模式变真门禁。

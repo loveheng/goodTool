@@ -4,11 +4,11 @@ library;
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:good_template/action/command_gateway.dart';
-import 'package:good_template/mcp/mcp_server.dart';
-import 'package:good_template/mcp/tool_face.dart';
-import 'package:good_template/ports.dart';
-import 'package:good_template/service/mcp_controller.dart';
+import 'package:goodtools/action/command_gateway.dart';
+import 'package:goodtools/mcp/mcp_server.dart';
+import 'package:goodtools/mcp/tool_face.dart';
+import 'package:goodtools/ports.dart';
+import 'package:goodtools/service/mcp_controller.dart';
 
 class _PongFace implements McpToolFace {
   @override
@@ -102,7 +102,7 @@ void main() {
     }));
     final info =
         ((jsonDecode(init) as Map)['result'] as Map)['serverInfo'] as Map;
-    expect(info['name'], 'good_template');
+    expect(info['name'], 'goodtools');
   });
 
   test('McpController.pushSuggestion 广播建议（内核不再按工具名嗅探）',

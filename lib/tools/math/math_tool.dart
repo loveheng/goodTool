@@ -16,15 +16,19 @@ import 'unit_converter.dart';
 ///
 /// 全部为 R 档（无写操作），[CategoryTool.commandGateway] 传 null
 /// （[CategoryTool.call] 仅 W 档才触达网关，R 档物理不可穿透）。
+///
+/// [ToolVisibility.shared]：本域属四大聚合工具之一，声明允许宿主收进共享面。
 CategoryTool buildMathTool() {
   final cat = CategoryTool(
     'math_utility',
     '计算与单位换算（高精度表达式求值 / 单位双向换算 / 单位自省）',
     null,
+    visibility: ToolVisibility.shared,
   );
   cat.register(_CalcEvalSub());
   cat.register(_UnitConvertSub());
   cat.register(_UnitListSub());
+  cat.register(_ListStatsSub());
   return cat;
 }
 
@@ -59,7 +63,8 @@ class _CalcEvalSub extends SubAction {
   @override
   String get description =>
       '安全执行高精度算术与科学表达式求值。支持四则运算、幂(^右结合)、括号嵌套、'
-      '科学函数(sqrt/abs/sin/cos/ln/log10 等)及常量(pi,e)；支持 "<值> <单位> to <单位>" 内联换算。'
+      '科学函数(sqrt/abs/sin/cos/ln/log10 等)及常量(pi,e)；支持 "<值> <单位> to <单位>" 内联换算，'
+      '连接字 to/换算 同义，单位名可用中文别名（公里/英里/公斤/摄氏度等）。'
       '注意：% 为后缀百分率(50%=0.5)；取模用 mod(a,b)；隐式乘法=显式*(1/2pi=(1/2)*pi)。';
 
   @override
@@ -124,7 +129,8 @@ class _UnitConvertSub extends SubAction {
   @override
   String get description =>
       '量纲双向换算（长度/质量/温度/面积/体积/速度/存储/压强/功率/油耗等 11 类）。'
-      '别名容错（km/h、公里每小时、℃、celsius 均可）；未知单位见 error.candidates 自愈。';
+      '别名容错（km/h、公里每小时、公里、英里、℃、celsius 均可）；'
+      '未知单位见 error.candidates 自愈。';
 
   @override
   String get paramSignature =>
@@ -215,6 +221,116 @@ class _UnitListSub extends SubAction {
     if (dim != null) {
       payload['dimension'] = dim;
       if (baseUnit != null) payload['baseUnit'] = baseUnit;
+    }
+    return _jsonSuccess(payload);
+  }
+}
+
+/// 列表元素 → [Decimal]：num 走类型分派，字符串走 [Decimal.tryParse] 保留完整精度。
+/// 不可解析返回 null，由子操作转结构化错误（G5：禁兜底默认值）。
+Decimal? _parseDecimalElement(Object? v) {
+  if (v is int) return Decimal.fromInt(v);
+  if (v is num) return Decimal.parse(v.toString());
+  if (v is String) return Decimal.tryParse(v.trim());
+  return null;
+}
+
+class _ListStatsSub extends SubAction {
+  static const _ops = ['sort', 'max', 'min', 'sum', 'mean', 'median'];
+
+  @override
+  String get name => 'list_stats';
+
+  @override
+  String get description =>
+      '高精度列表统计（Decimal 内核，不先转 double，长列表/高精度数值专用）：'
+      'op 取 sort（升/降序排序）/ max / min（附下标）/ sum / mean / median。'
+      '元素支持数值或高精度数字串（如 "0.123456789012345678"）。';
+
+  @override
+  String get paramSignature =>
+      'list_stats(values: number[]|string[], op: string, order?: "asc"|"desc", precision?) '
+      '[必填: values, op；op ∈ sort/max/min/sum/mean/median]';
+
+  @override
+  Future<SubActionResult> execute(Map<String, Object?> params) async {
+    final rawValues = params['values'];
+    final op = params['op'];
+    if (rawValues is! List || rawValues.isEmpty) {
+      return _err('MISSING_ARGUMENT', '缺少必填参数 values（非空数组：数值或高精度数字串）');
+    }
+    if (op is! String || !_ops.contains(op)) {
+      return _err('INVALID_ARGUMENT', 'op 非法：$op',
+          candidates: _ops,
+          suggestion: 'op 取 ${_ops.join(" / ")} 之一');
+    }
+
+    // 逐元素解析，不可解析带下标报错（禁静默跳过/兜底）
+    final values = <Decimal>[];
+    for (var i = 0; i < rawValues.length; i++) {
+      final d = _parseDecimalElement(rawValues[i]);
+      if (d == null) {
+        return _err('INVALID_ARGUMENT', 'values[$i] 不是合法数值：${rawValues[i]}');
+      }
+      values.add(d);
+    }
+
+    final precision = parseInt(params['precision']);
+    if (precision != null && precision < 0) {
+      return _err('INVALID_ARGUMENT', 'precision 须为非负整数：$precision');
+    }
+    // 直传值（sort/max/min 的元素）缺省原样输出保精度；显式 precision 才舍入。
+    // 计算值（sum/mean/median）除法有尾迹，仍走 formatDecimal（缺省 12 位）。
+    String fmtExact(Decimal d) =>
+        precision != null ? formatDecimal(d, scale: precision) : d.toString();
+    final scale = precision ?? 12;
+
+    final payload = <String, Object?>{
+      'success': true,
+      'op': op,
+      'count': values.length,
+    };
+
+    switch (op) {
+      case 'sort':
+        final order = params['order'] ?? 'asc';
+        if (order is! String || (order != 'asc' && order != 'desc')) {
+          return _err('INVALID_ARGUMENT', 'order 非法：$order',
+              suggestion: 'order 取 asc / desc（缺省 asc）');
+        }
+        final sorted = [...values]..sort((a, b) => order == 'asc' ? a.compareTo(b) : b.compareTo(a));
+        payload['result'] = sorted.map(fmtExact).toList();
+        payload['numericValues'] = sorted.map(_numericValue).toList();
+        if (order != 'asc') payload['order'] = order;
+      case 'max' || 'min':
+        var best = 0;
+        for (var i = 1; i < values.length; i++) {
+          final c = values[i].compareTo(values[best]);
+          if (op == 'max' ? c > 0 : c < 0) best = i;
+        }
+        payload['result'] = fmtExact(values[best]);
+        payload['numericValue'] = _numericValue(values[best]);
+        payload['index'] = best;
+      case 'sum' || 'mean':
+        var sum = Decimal.zero;
+        for (final v in values) {
+          sum += v;
+        }
+        final result = op == 'sum'
+            ? sum
+            : (sum / Decimal.fromInt(values.length))
+                .toDecimal(scaleOnInfinitePrecision: 30);
+        payload['result'] = formatDecimal(result, scale: scale);
+        payload['numericValue'] = _numericValue(result);
+      case 'median':
+        final sorted = [...values]..sort();
+        final mid = sorted.length ~/ 2;
+        final Decimal result = sorted.length.isOdd
+            ? sorted[mid]
+            : ((sorted[mid - 1] + sorted[mid]) / Decimal.fromInt(2))
+                .toDecimal(scaleOnInfinitePrecision: 30);
+        payload['result'] = formatDecimal(result, scale: scale);
+        payload['numericValue'] = _numericValue(result);
     }
     return _jsonSuccess(payload);
   }

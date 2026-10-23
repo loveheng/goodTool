@@ -5,9 +5,9 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:good_template/mcp/category_tool_face.dart';
-import 'package:good_template/mcp/weather_provider.dart';
-import 'package:good_template/tools/weather_tool.dart';
+import 'package:goodtools/mcp/category_tool_face.dart';
+import 'package:goodtools/mcp/weather_provider.dart';
+import 'package:goodtools/tools/weather_tool.dart';
 
 void main() {
   /// 单条 text content → 解码后的 JSON。

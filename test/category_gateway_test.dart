@@ -5,8 +5,8 @@ library;
 ///
 /// 对应 coding-standards §3.3 G1–G5 与设计稿 domain_gateway.md 验证清单。
 import 'package:flutter_test/flutter_test.dart';
-import 'package:good_template/action/command_gateway.dart';
-import 'package:good_template/mcp/category_tool_face.dart';
+import 'package:goodtools/action/command_gateway.dart';
+import 'package:goodtools/mcp/category_tool_face.dart';
 
 /// R 档子操作（读）：继承基类 `isWrite: false` 默认。
 class _EchoSub extends SubAction {
@@ -136,5 +136,22 @@ void main() {
     final action = props['action']! as Map<String, Object?>;
     expect(action['enum'], ['echo']);
     expect(props['params'], isNotNull);
+  });
+
+  test('toSchema：可见性默认 private（default-deny，漏标即最严）', () {
+    final cat = CategoryTool('demo', '演示分类', gw);
+    cat.register(_EchoSub());
+    final meta = cat.toSchema()['_meta']! as Map<String, Object?>;
+    final goodhub = meta['goodhub']! as Map<String, Object?>;
+    expect(goodhub['visibility'], 'private');
+  });
+
+  test('toSchema：显式 shared 下发到 _meta.goodhub.visibility', () {
+    final cat = CategoryTool('demo', '演示分类', gw,
+        visibility: ToolVisibility.shared);
+    cat.register(_EchoSub());
+    final meta = cat.toSchema()['_meta']! as Map<String, Object?>;
+    final goodhub = meta['goodhub']! as Map<String, Object?>;
+    expect(goodhub['visibility'], 'shared');
   });
 }
