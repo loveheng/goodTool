@@ -50,4 +50,4 @@ last-merge: 2026-10-20
 - 踩坑（7 条，通用可复用）：`context/lessons.md` §calendar —— ICS 禁 `toUtc()`、失败信封须走 `structuredError`、跨度逐月推进、`BYMONTHDAY` 按 FREQ 分流、农历库约定读源码钉死、null-aware 对 false 仍出字段、合并层禁 `addAll` 不可变列表。
 
 ## 断点
-- [断点] 下一步：time_now 已上线（15 action 全可用）；等待新子任务（候选：闹钟/提醒类真实世界动作、节假日表 OTA 热更）
+- [断点] 下一步：真机复验日历切月/切年滑动过渡手感；等待新子任务（候选：闹钟/提醒类真实世界动作、节假日表 OTA 热更）

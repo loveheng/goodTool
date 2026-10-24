@@ -52,6 +52,10 @@ class _CalendarPageState extends State<CalendarPage> {
   double _gestureScale = 1;
   int _gesturePointers = 1;
 
+  /// 切页动画方向（用户反馈「左右滑动生硬直接变」）：+1 = 下一月/年（新内容
+  /// 从右滑入）、-1 = 上一项（从左滑入）、0 = 无方向纯淡入（跳月/今天/点选落月）。
+  double _pendingShiftDx = 0;
+
   /// 月/年视图数据（按当前定位区间查询的逐日密度）。
   CalendarRangeOverviewView? _overview;
 
@@ -130,6 +134,7 @@ class _CalendarPageState extends State<CalendarPage> {
   void _goMonth() {
     setState(() {
       _mode = _CalMode.month;
+      _pendingShiftDx = 0; // 视图模式切换不带横滑方向（纯淡入）。
     });
     _loadOverview();
   }
@@ -137,6 +142,7 @@ class _CalendarPageState extends State<CalendarPage> {
   void _goYear() {
     setState(() {
       _mode = _CalMode.year;
+      _pendingShiftDx = 0;
     });
     _loadOverview();
   }
@@ -150,6 +156,7 @@ class _CalendarPageState extends State<CalendarPage> {
       _selectedDate = _today;
       _mode = _CalMode.month;
       _showEvents = true;
+      _pendingShiftDx = 0; // 「今天」归位不带方向。
     });
     _loadOverview();
     _loadEvents(_today);
@@ -179,12 +186,16 @@ class _CalendarPageState extends State<CalendarPage> {
     setState(() {
       _mode = _CalMode.month;
       _viewMonth = month;
+      _pendingShiftDx = 0; // 年视图点选落月：纵向语义，纯淡入。
     });
     _loadOverview();
   }
 
   void _shiftMonth(int delta) {
     setState(() {
+      // 方向语义对齐 PageView：右滑看上月（旧内容左出、新内容左入），
+      // 左滑看下月反之；跳月/「今天」不带方向（纯淡入）。
+      _pendingShiftDx = delta > 0 ? 1 : -1;
       var y = _viewYear;
       var m = _viewMonth + delta;
       if (m < 1) {
@@ -202,6 +213,7 @@ class _CalendarPageState extends State<CalendarPage> {
 
   void _shiftYear(int delta) {
     setState(() {
+      _pendingShiftDx = delta > 0 ? 1 : -1;
       _viewYear += delta;
     });
     _loadOverview();
@@ -376,14 +388,37 @@ class _CalendarPageState extends State<CalendarPage> {
                                           : _shiftMonth(1);
                                     }
                                   },
-                                  child: MonthGrid(
-                                    year: _viewYear,
-                                    month: _viewMonth,
-                                    densities: _densities,
-                                    selectedDate: _selectedDate,
-                                    todayDate: _today,
-                                    dayFacts: _monthFacts(),
-                                    onDaySelected: _onDaySelected,
+                                  child: AnimatedSwitcher(
+                                    // 切月过渡（用户反馈「生硬直接变」）：方向
+                                    // 感知滑动 + 淡入；手势识别器包在外层，过渡
+                                    // 期间连续滑动手势不丢。
+                                    duration: const Duration(milliseconds: 240),
+                                    switchInCurve: Curves.easeOut,
+                                    switchOutCurve: Curves.easeIn,
+                                    transitionBuilder: (child, animation) =>
+                                        FadeTransition(
+                                      opacity: animation,
+                                      child: SlideTransition(
+                                        position: Tween<Offset>(
+                                          begin: Offset(_pendingShiftDx, 0),
+                                          end: Offset.zero,
+                                        ).animate(animation),
+                                        child: child,
+                                      ),
+                                    ),
+                                    child: KeyedSubtree(
+                                      key: ValueKey(
+                                          'month-$_viewYear-$_viewMonth'),
+                                      child: MonthGrid(
+                                        year: _viewYear,
+                                        month: _viewMonth,
+                                        densities: _densities,
+                                        selectedDate: _selectedDate,
+                                        todayDate: _today,
+                                        dayFacts: _monthFacts(),
+                                        onDaySelected: _onDaySelected,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
@@ -448,23 +483,42 @@ class _CalendarPageState extends State<CalendarPage> {
                   () => _shiftYear(-1),
                   () => _shiftYear(1),
                 ),
-                child: () {
-                  final sel = _selectedDate.split('-');
-                  final selYear = int.parse(sel[0]);
-                  final selMonth = int.parse(sel[1]);
-                  final selDay = int.parse(sel[2]);
-                  return YearGrid(
-                    year: _viewYear,
-                    densities: _densities,
-                    currentMonth: DateTime.now().year == _viewYear
-                        ? DateTime.now().month
-                        : 0,
-                    today: DateTime.now(),
-                    selectedMonth: selYear == _viewYear ? selMonth : 0,
-                    selectedDay: selYear == _viewYear ? selDay : -1,
-                    onMonthSelected: _onMonthSelected,
-                  );
-                }(),
+                child: AnimatedSwitcher(
+                  // 切年过渡：与月视图同一方向感知滑动 + 淡入口径。
+                  duration: const Duration(milliseconds: 240),
+                  switchInCurve: Curves.easeOut,
+                  switchOutCurve: Curves.easeIn,
+                  transitionBuilder: (child, animation) => FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: Offset(_pendingShiftDx, 0),
+                        end: Offset.zero,
+                      ).animate(animation),
+                      child: child,
+                    ),
+                  ),
+                  child: () {
+                    final sel = _selectedDate.split('-');
+                    final selYear = int.parse(sel[0]);
+                    final selMonth = int.parse(sel[1]);
+                    final selDay = int.parse(sel[2]);
+                    return KeyedSubtree(
+                      key: ValueKey('year-$_viewYear'),
+                      child: YearGrid(
+                        year: _viewYear,
+                        densities: _densities,
+                        currentMonth: DateTime.now().year == _viewYear
+                            ? DateTime.now().month
+                            : 0,
+                        today: DateTime.now(),
+                        selectedMonth: selYear == _viewYear ? selMonth : 0,
+                        selectedDay: selYear == _viewYear ? selDay : -1,
+                        onMonthSelected: _onMonthSelected,
+                      ),
+                    );
+                  }(),
+                ),
               ),
             ),
             SizedBox(height: t.metrics.space4),
