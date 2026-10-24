@@ -1,0 +1,8 @@
+{
+  "versionCode": 35,
+  "versionName": "0.1.1",
+  "applicationId": "com.goodhub.goodtools",
+  "apkUrl": "https://r2.oklhj.eu.org/updates/goodtools/app-35.apk",
+  "sha256": "e840ce613751791fb34a20bcccd88d11d2bf61f609f41e2fec0c99681e26dc2f",
+  "changelog": "feat(mcp): CategoryTool 下发 MCP 标准 annotations（readOnlyHint/destructiveHint）"
+}
