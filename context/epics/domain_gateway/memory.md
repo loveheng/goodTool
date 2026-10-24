@@ -30,4 +30,4 @@ last-merge: none
 - 2026-10-20 **四域矩阵闭环（P2-⑧ 装配）**：`system_pim`(14，含 5 个 W 档) 经 S6-P1→P2-⑧ 落地并装配进 `tool_face_assembly.dart`，线级 = **4 域 26 action**（24 个可用，`calendar_resolve_date` / `calendar_tz_convert` 为显式 fail-closed，待农历引擎与 `package:timezone`）。**`CommandGateway` 写门禁首次在生产路径闭环**（admits → validate → dispatch → Actor），arch-guard R7 从扫描模式变真门禁。
 
 ## 断点
-- [断点] 下一步：① 批准两个依赖（`package:timezone`、农历库）以收掉最后 2 个 action；② 清 `McpServer._builtinInstructions` 的「拾光排程师」文案残留（需产品定位拍板）；③ 接入真实 `LocationSensorProvider`（geolocator），让 `geo_current`/`geo_compass` 与天气回退链末级真正可用；④ 系统日历源（`source: system`，需 Android 平台通道）与标记持久化 store（SharedPreferences 异步打开后注入装配件）。
+- [断点] 下一步：下一步：清 McpServer._builtinInstructions 的「拾光排程师」文案残留（需产品定位拍板，拍板前不擅改）；旧①依赖批准/③geolocator/④系统日历源与标记 store 均已落地闭环

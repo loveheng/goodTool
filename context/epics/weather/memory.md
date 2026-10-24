@@ -2,8 +2,8 @@
 dev-loop: memory
 format: v1
 epic: weather
-total-merged: 0
-last-merge: none
+total-merged: 2
+last-merge: 2026-10-24
 ---
 
 # weather
@@ -30,5 +30,24 @@ last-merge: none
   - **关键决策**：① **不接 SDK**（pub.dev 无官方 Flutter SDK；官方 SDK 同样要 Key+Host，不消除根因；社区插件老且为原生插件，破坏无头架构）；② 新增 `ERR_WEATHER_HOST_INVALID`（Host 无效/服务未开通）与「Key 缺失优先于 Host 缺失」的上报次序；③ **错误体必须读出**再翻译（JSON:API `error.title/detail` + 中文「服务不可访问」），旧实现丢体导致用户只看到笼统「鉴权失败」；④ HTTP 200 + `error` 段也拦截（消除「成功但 now 为空」假成功）；⑤ Host 值归一化（去协议/斜杠/路径段）；⑥ GeoAPI 不再兜底公共域名（兜底只会被误报成「查无此城」）。
   - **用户侧待办**：天气仍需在设置页填 Key + 账号专属 Host 才能取数（**非代码可解**，SDK 也一样）。
 
+- 2026-10-24 **403 Security Restriction 拆出（provider 单测 28 例）**：真机 403 实测为和风控制台**安全限制**（IP 白名单/访问限制）拦截——Key/Host 本身有效，`_isSecurityRestriction` 优先识别，文案指向控制台安全设置，不再落入笼统「鉴权失败」。
+
+- 2026-10-24 **天气页改版 + 多城市持久化全量落地（[准入] S2 结构性引入，仿 geo 收藏五件套；576 项单测）**：
+  - **领域层**：`weather_city_store`（`weather_cities` 键，上限 10 配额护栏 + 重名拒绝，内存/SharedPrefs 双实现）+ `WeatherCityRepository` 读聚合（R5）。
+  - **命令面**：`user_weather_city_add/delete` + `WeatherCityActors`（**用户侧注册表，AI 不可触达**，不进 MCP 工具面）。
+  - **搜索**：`WeatherProvider.searchCity`（GeoAPI lookup 多候选类型化信封，「查无此城」= 成功空列表）+ `WeatherPort.searchCity` 视图。
+  - **UI**：weather_page 重构 = 城市列表 + 底部胶囊搜索条 + DraggableScrollableSheet 半/全屏（snap/把手/Listener 快甩/FocusNode 守卫/viewInsets 全对齐地图页范式），裸经纬度表单退役；`weather_location` 预设城市语义不变。
+
+- 2026-10-24 **两项未闭环候选闭环（582 项单测 + analyze 0 issue + arch-guard 7 条全过）**：
+  - **地图选点→加城市协同**：`WeatherProvider.lookupCityByCoords` 坐标反查（GeoAPI `location=lng,lat` **经度在前**两位小数，与天气查询同口径；「查无此城」= 成功空列表）→ `WeatherPort` 投影（与 searchCity 共用 `_toSearchView`）→ 地图页新增「天气」分段 + `_PickMode.weather` 选点模式（点地图落 pin → 反查候选 → 点「添加」经 `UserWeatherCityAddCommand` 入列）。**条目用候选回传的和风行政链名 + 城市质心坐标 + LocationID**——与搜索添加同源同构，重名校验语义一致，取数同走坐标直查；写路径守 R1（UI 只组装命令）。
+  - **城市列表逐城缓存聚合**：weather_page 增逐城摘要（行内 temp/text + `isCached` 标记），与「点城市取数」**共用 provider 逐城 TTL 缓存**（同 `location#days` 键，days 缺省 3）——摘要先行预热、命中零出网、点详情直接回放缓存；未命中**逐城串行**补数（开发版和风配额护栏）；失败行内给人话不摆机器码；`_query` 最新结果同步回写摘要行；删除城市即剪枝。
+- Ref: docs/product/weather.md ## 决策日志（不装配空工具 / 行政链相邻重复段折叠 / 不接和风 SDK 三条决策原文）
+
+- 2026-10-24 **真机侧载验收通过（用户确认）**：天气页全量新交互（搜索添加/拖拽面板/点城市取数/行内摘要/地图选点加城市）+ 真机填 Key+Host 真实取数。
+
+- 2026-10-24 **配额护栏三件套**（607 项单测收口前态）：`QWeatherProvider` 出网侧 ① **singleflight**（同 `location#days` 并发共享一次在途取数，`_inflight` 表）② **串行节流**（`_fetchQueue` 先到先服务，相邻起跑间隔 `pacing` 默认 300ms≈3 QPS 上限，注入口可关；pacing 走真实时间，与 TTL/冷却的注入 clock 分离）③ **429 冷却窗**（命中频控后 `rateLimitCooldown` 默认 60s 不出网：有缓存回放标 isCached、无缓存 `ERR_RATE_LIMITED` 带冷却指引；截止由注入 clock 驱动可测）。三件套只作用 forecast 类出网，`searchCity`/`lookupCityByCoords` 不受冷却拦截。口径在 weather.md「缓存策略与频控」。
+
+- 2026-10-24 **域深化四件上线（weather 1→5 action，线级 4 域 33 action；607 项单测）**：`weather_air`（AQI /v7/air/now）/ `weather_indices`（生活指数 1d|3d，type 数字或逗号分隔）/ `weather_astronomy`（日出日落，date 缺省设备今日）/ `weather_minutely`（分钟级降水 summary+2h 序列）。**共用 Key/Host/传输层/回退链/配额护栏**：provider 抽 `_guardedFetch` 共享通道（TTL→冷却→singleflight→队列+pacing），四件**独立缓存键位**（`air:`/`idx:`/`solar:`/`min:` 前缀）不与预报互串；`_fetchOne` 单端点投影（objectKey→now / listKey→forecast / summaryOf→now.summary，空段不出键）；工具层 `_parseLocArgs` 五动作统一宽容解析（G5 不兜底）。**待真机验**：indices/astronomy/minutely 开发版账号是否含这些端点。G1 契约先行：weather.md 增四件契约表。
+
 ## 断点
-- [断点] weather 域代码侧已收口（公共域名停用口径 + 错误体真因透传 + Host 归一化）。下一步候选：① **真机填 Key + 账号专属 Host 验证一次真实取数**（唯一未验证项：真实账号响应体形态是否与单测构造一致）；② 切 `CURRENT` 回 `domain_gateway` 落地 `system_pim`（14 action，含 5 个 W 档，是 R7 写门禁的首次真实验证点）；③ 清 `McpServer._builtinInstructions` 的「拾光排程师」文案残留（需产品定位拍板）；④ 磁力计接入（`geo_compass` 仍 fail-closed）。
+- [断点] 下一步：真机复验天气页新手势交互（左滑删除/手风琴展开/键盘搜索）；另：域深化四件真实账号权限待验（indices/astronomy/minutely 开发版是否含）

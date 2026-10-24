@@ -39,10 +39,19 @@ class MethodChannelSystemCalendarPort implements SystemCalendarPort {
       );
     } on PlatformException catch (e) {
       // 平台侧机器码映射：权限未授权单列（引导授权），其余归源不可用。
+      // 自愈三件套：PERMISSION_DENIED 带结构化 suggestion（App 内一键入口在日历页），
+      // 让 Agent 能给用户可执行指引，而非只有 message 散文。
       final code = e.code == 'PERMISSION_DENIED'
           ? CalendarErr.permissionDenied
           : CalendarErr.sourceUnavailable;
-      throw CalendarFeedException(code, '系统日历读取失败：${e.message ?? e.code}');
+      throw CalendarFeedException(
+        code,
+        '系统日历读取失败：${e.message ?? e.code}',
+        suggestion: e.code == 'PERMISSION_DENIED'
+            ? '请用户在 App 日历页点「授予日历权限」（引导跳系统设置），'
+                '或直接到系统设置 → 应用 → goodTools 授予日历权限后重试'
+            : null,
+      );
     }
     if (result is! List) {
       throw const CalendarFeedException(

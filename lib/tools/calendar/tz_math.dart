@@ -89,7 +89,7 @@ class TzMath {
     final projected = tz.TZDateTime.from(instant, toLoc);
     final zone = toLoc.timeZone(projected.millisecondsSinceEpoch);
     return <String, Object?>{
-      'target': _fmtIso(projected),
+      'target': fmtIso(projected),
       'offset': fmtOffset(projected.timeZoneOffset),
       'offsetMinutes': projected.timeZoneOffset.inMinutes,
       'abbreviation': zone.abbreviation,
@@ -107,7 +107,8 @@ class TzMath {
   }
 
   /// `TZDateTime` → `YYYY-MM-DDTHH:mm:ss±HH:MM`（B3 显式 offset，秒级精度）。
-  static String _fmtIso(tz.TZDateTime d) {
+  /// 公开口径：`project().target` 与 `time_now().now` 同一格式化器。
+  static String fmtIso(tz.TZDateTime d) {
     String two(int v) => v.toString().padLeft(2, '0');
     return '${d.year.toString().padLeft(4, '0')}-${two(d.month)}-${two(d.day)}'
         'T${two(d.hour)}:${two(d.minute)}:${two(d.second)}'

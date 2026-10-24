@@ -67,6 +67,15 @@ const Duration qweatherCacheTtl = Duration(minutes: 30);
 /// 单次请求超时。
 const Duration qweatherRequestTimeout = Duration(seconds: 8);
 
+/// 配额护栏②：出网取数的最小起跑间隔（串行队列相邻两次取数之间）。
+/// 开发版和风 QPS 常限 20 甚至更低，300ms ≈ 3 QPS 上限留足余量；注入 0 关闭
+/// （单测注入小值或 0）。pacing 走**真实时间**（与 Future.delayed 同钟），不经
+/// 注入 clock——TTL/冷却的逻辑时间注入与墙钟节流分离，互不干扰。
+const Duration qweatherFetchPacing = Duration(milliseconds: 300);
+
+/// 配额护栏③：命中 429 后的冷却窗，冷却期内不再出网（防连环 429 白烧配额）。
+const Duration qweatherRateLimitCooldown = Duration(seconds: 60);
+
 /// 和风真实源：聚合 GeoAPI 解析、Host 路由、Body 业务码拦截、并发聚合、
 /// TTL 缓存与频控回退。
 ///
@@ -81,6 +90,8 @@ class QWeatherProvider implements WeatherProvider {
     this.port,
     this.scheme = 'https',
     this.ttl = qweatherCacheTtl,
+    this.pacing = qweatherFetchPacing,
+    this.rateLimitCooldown = qweatherRateLimitCooldown,
     DateTime Function()? clock,
   })  : _sensor = sensor ?? const NullLocationSensorProvider(),
         apiHostOverride = apiHost,
@@ -95,6 +106,12 @@ class QWeatherProvider implements WeatherProvider {
   final int? port;
   final String scheme;
   final Duration ttl;
+
+  /// 配额护栏②注入口：出网取数最小起跑间隔（0 关闭）。
+  final Duration pacing;
+
+  /// 配额护栏③注入口：429 冷却窗时长。
+  final Duration rateLimitCooldown;
   final DateTime Function() clock;
 
   /// `location#days` → 缓存条目（now 与 forecast 共享同一生命周期）。
@@ -102,6 +119,22 @@ class QWeatherProvider implements WeatherProvider {
 
   /// 城市名 → LocationID 映射缓存（免 GeoAPI 往返，降频控压力）。
   final Map<String, _Loc> _cityCache = {};
+
+  // ---- 配额护栏（开发版配额极低；Agent 并发调用与 UI 逐城聚合叠加时防风暴） ----
+
+  /// 护栏①：同 `location#days` 的在途取数合并——并发调用共享同一次出网
+  /// （UI 逐城聚合 + Agent 同时查同城的场景下不重复消耗配额）。
+  final Map<String, Future<WeatherResult>> _inflight = {};
+
+  /// 护栏②：串行取数队列尾——不同 key 的并发取数排队出网，杜绝并发风暴；
+  /// 队尾推进吞掉任务结果（成败都放行下一个，错误已由任务自身折叠为信封）。
+  Future<void> _fetchQueue = Future<void>.value();
+
+  /// 护栏② pacing 基准：上次取数起跑时刻（真实时间）。
+  DateTime _lastFetchStart = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// 护栏③：429 冷却截止时刻（注入 clock 驱动；null = 无冷却）。
+  DateTime? _cooldownUntil;
 
   @override
   Future<WeatherResult> forecast({
@@ -115,27 +148,241 @@ class QWeatherProvider implements WeatherProvider {
       // **缺失优先于 Host 缺失上报**——更基础的配置错先报，用户动作更明确。
       await _ensureKey();
       final loc = await _resolve(city: city, lat: lat, lng: lng);
-      final cacheKey = '${loc.location}#$days';
-      final cached = _cache[cacheKey];
-      if (cached != null && _isFresh(cached)) {
-        return _markCached(cached.result);
-      }
-      try {
+      return await _guardedFetch('${loc.location}#$days', () async {
         final result = await _retryOnce(() => _fetchAll(loc, days));
-        _cache[cacheKey] = _CacheEntry(result, clock());
         return result;
-      } on _WeatherFail catch (e) {
-        // 频控自愈 / 取数失败：有缓存一律回放（标 isCached），不静默编造数据。
-        if (cached != null) {
-          debugPrint('[DEGRADE][weather_${e.code}] 回放缓存: ${e.message}');
-          return _markCached(cached.result);
-        }
-        rethrow;
-      }
+      });
     } on _WeatherFail catch (e) {
       return WeatherResult.failure(
           WeatherError(e.code, e.message, suggestion: e.suggestion));
     }
+  }
+
+  /// 共享取数通道（forecast 与域深化四件共用）：TTL 命中回放 → 429 冷却拦截 →
+  /// 同 key singleflight 合并 → 串行队列 + pacing 出网。失败折叠在队列任务内
+  /// （并发等待者拿到同一份，不再各自重试放大风暴）。
+  Future<WeatherResult> _guardedFetch(
+    String cacheKey,
+    Future<WeatherResult> Function() doFetch,
+  ) async {
+    final cached = _cache[cacheKey];
+    if (cached != null && _isFresh(cached)) {
+      return _markCached(cached.result);
+    }
+    // 护栏③：429 冷却期内不出网——有任何缓存（含过期）即回放并标 isCached，
+    // 否则带冷却指引失败（fail-closed，不硬闯频控白烧配额）。
+    final cooldown = _cooldownUntil;
+    if (cooldown != null && clock().isBefore(cooldown)) {
+      if (cached != null) {
+        debugPrint('[DEGRADE][weather_cooldown] 429 冷却期内回放缓存: $cacheKey');
+        return _markCached(cached.result);
+      }
+      throw _WeatherFail(
+        WeatherErr.rateLimited,
+        '和风频控冷却中（约 ${cooldown.difference(clock()).inSeconds}s 后恢复出网）',
+        '降低调用频率；冷却结束后重试，期间已有缓存会自动回放',
+      );
+    }
+    // 护栏①：同 key 并发合并——在途取数直接共享，不重复出网。
+    final shared = _inflight[cacheKey];
+    if (shared != null) {
+      return await shared;
+    }
+    final task = _enqueueFetch(cacheKey, doFetch);
+    _inflight[cacheKey] = task;
+    try {
+      return await task;
+    } finally {
+      _inflight.remove(cacheKey);
+    }
+  }
+
+  /// 护栏②：把取数任务挂到串行队列尾（先到先服务，相邻任务间按 [pacing] 留间隔）。
+  ///
+  /// 队尾推进吞掉任务结果——错误已在任务内折叠为失败信封，队列本身只关心
+  /// 「前一个落定」，等待者从返回的 [task] 拿结果。
+  Future<WeatherResult> _enqueueFetch(
+    String cacheKey,
+    Future<WeatherResult> Function() doFetch,
+  ) {
+    final task = _fetchQueue.then((_) => _pacedFetch(cacheKey, doFetch));
+    _fetchQueue = task.then<void>((_) {}, onError: (_) {});
+    return task;
+  }
+
+  /// 串行队列中的单次取数：pacing 补足间隔 → 出网 → 写缓存；
+  /// 失败折叠为失败信封（429 额外开启冷却窗；有缓存一律回放标 isCached）。
+  Future<WeatherResult> _pacedFetch(
+    String cacheKey,
+    Future<WeatherResult> Function() doFetch,
+  ) async {
+    final since = DateTime.now().difference(_lastFetchStart);
+    if (since < pacing) {
+      await Future<void>.delayed(pacing - since);
+    }
+    _lastFetchStart = DateTime.now();
+    try {
+      final result = await doFetch();
+      _cache[cacheKey] = _CacheEntry(result, clock());
+      return result;
+    } on _WeatherFail catch (e) {
+      if (e.code == WeatherErr.rateLimited) {
+        // 护栏③：命中频控 → 开启冷却窗（防连环 429 白烧配额）。
+        _cooldownUntil = clock().add(rateLimitCooldown);
+      }
+      // 频控自愈 / 取数失败：有缓存一律回放（标 isCached），不静默编造数据。
+      final cached = _cache[cacheKey];
+      if (cached != null) {
+        debugPrint('[DEGRADE][weather_${e.code}] 回放缓存: ${e.message}');
+        return _markCached(cached.result);
+      }
+      return WeatherResult.failure(
+          WeatherError(e.code, e.message, suggestion: e.suggestion));
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 域深化四件：air / indices / astronomy / minutely（共用回退链与配额护栏）
+  // ---------------------------------------------------------------------------
+
+  @override
+  Future<WeatherResult> air({String? city, double? lat, double? lng}) =>
+      _projection(
+        city: city,
+        lat: lat,
+        lng: lng,
+        cachePrefix: 'air',
+        path: '/v7/air/now',
+        objectKey: 'airNow',
+      );
+
+  @override
+  Future<WeatherResult> indices({
+    String? city,
+    double? lat,
+    double? lng,
+    int days = 1,
+    String? type,
+  }) {
+    final path = days <= 1 ? '/v7/indices/1d' : '/v7/indices/3d';
+    return _projection(
+      city: city,
+      lat: lat,
+      lng: lng,
+      cachePrefix: 'idx#${days <= 1 ? 1 : 3}'
+          '${type == null || type.trim().isEmpty ? '' : '#$type'}',
+      path: path,
+      listKey: 'daily',
+      extraQuery: type == null || type.trim().isEmpty
+          ? null
+          : {'type': type.trim()},
+    );
+  }
+
+  @override
+  Future<WeatherResult> astronomy({
+    String? city,
+    double? lat,
+    double? lng,
+    String? date,
+  }) {
+    final d = (date == null || date.trim().isEmpty)
+        ? _deviceToday()
+        : date.trim();
+    return _projection(
+      city: city,
+      lat: lat,
+      lng: lng,
+      cachePrefix: 'solar#$d',
+      path: '/v7/astronomy/solar',
+      objectKey: 'solar',
+      extraQuery: {'date': d},
+    );
+  }
+
+  /// 设备本地今日 `YYYY-MM-DD`（astronomy 缺省日期）。
+  static String _deviceToday() {
+    final n = DateTime.now();
+    String p(int v) => v.toString().padLeft(2, '0');
+    return '${n.year.toString().padLeft(4, '0')}-${p(n.month)}-${p(n.day)}';
+  }
+
+  @override
+  Future<WeatherResult> minutely({String? city, double? lat, double? lng}) =>
+      _projection(
+        city: city,
+        lat: lat,
+        lng: lng,
+        cachePrefix: 'min',
+        path: '/v7/minutely/5m',
+        summaryOf: (body) => body['summary']?.toString(),
+        listKey: 'minutely',
+      );
+
+  /// 域深化四件的公共骨架：Key 前置 → 回退链解析 → 独立键位走共享护栏通道 →
+  /// 单端点投影（[objectKey] 进 `now`，[listKey] 进 `forecast`，[summaryOf]
+  /// 兜 `now.summary`）。
+  Future<WeatherResult> _projection({
+    String? city,
+    double? lat,
+    double? lng,
+    required String cachePrefix,
+    required String path,
+    String? objectKey,
+    String? listKey,
+    String? Function(Map<String, Object?>)? summaryOf,
+    Map<String, String>? extraQuery,
+  }) async {
+    try {
+      await _ensureKey();
+      final loc = await _resolve(city: city, lat: lat, lng: lng);
+      return await _guardedFetch('$cachePrefix:${loc.location}', () async {
+        final host = await _apiHost();
+        return _retryOnce(() => _fetchOne(
+              host,
+              path,
+              <String, String>{..._weatherQuery(loc), ...?extraQuery},
+              loc,
+              objectKey: objectKey,
+              listKey: listKey,
+              summaryOf: summaryOf,
+            ));
+      });
+    } on _WeatherFail catch (e) {
+      return WeatherResult.failure(
+          WeatherError(e.code, e.message, suggestion: e.suggestion));
+    }
+  }
+
+  /// 单端点取数投影：`objectKey` 单对象段 → `now`；`listKey` 列表段 → `forecast`；
+  /// `summaryOf`（分钟级降水总结）→ `now.summary`。空段不出键（不吐 null）。
+  Future<WeatherResult> _fetchOne(
+    String host,
+    String path,
+    Map<String, String> query,
+    _Loc loc, {
+    String? objectKey,
+    String? listKey,
+    String? Function(Map<String, Object?>)? summaryOf,
+  }) async {
+    final body = await _get(host, path, query);
+    final now = objectKey != null && body[objectKey] is Map
+        ? (body[objectKey] as Map).cast<String, Object?>()
+        : null;
+    final list = listKey != null && body[listKey] is List
+        ? (body[listKey] as List)
+            .whereType<Map>()
+            .map((e) => e.cast<String, Object?>())
+            .toList(growable: false)
+        : const <Map<String, Object?>>[];
+    final summary = now == null && summaryOf != null ? summaryOf(body) : null;
+    return WeatherResult.success(
+      city: loc.city,
+      locationId: loc.locationId,
+      updateTime: body['updateTime']?.toString(),
+      now: now ?? (summary == null ? null : <String, Object?>{'summary': summary}),
+      forecast: list,
+    );
   }
 
   /// Key 校验（每次 forecast 前置一次）：缺失即带机器码失败，不静默兜底。
@@ -218,40 +465,96 @@ class QWeatherProvider implements WeatherProvider {
 
     final ep = await _geoEndpoint();
     final body = await _get(ep.host, ep.path, {'location': city});
-    final raw = body['location'] is List ? body['location'] as List : const [];
-    if (raw.isEmpty) {
+    final options = _parseCityOptions(body, fallbackName: city);
+    if (options.isEmpty) {
       throw _WeatherFail(WeatherErr.cityNotFound, '查无此城：$city',
           '检查城市名/行政区写法，或改用经纬度查询');
     }
-    final first = raw.firstWhere(
-      (e) => e is Map,
-      orElse: () => null,
-    ) as Map?;
-    if (first == null) {
-      throw _WeatherFail(WeatherErr.cityNotFound, '城市解析结果结构异常：$city',
-          '改用经纬度查询');
-    }
-    final id = first['id']?.toString();
-    if (id == null || id.isEmpty) {
+    final first = options.first;
+    final lid = first.locationId;
+    if (lid == null || lid.isEmpty) {
       throw _WeatherFail(WeatherErr.cityNotFound, '城市解析未返回 LocationID：$city',
           '改用经纬度查询');
     }
-    // 出参 city 用和风**完整行政链**，消除重名县市歧义（非用户输入原词）。
-    final adm1 = first['adm1']?.toString() ?? '';
-    final adm2 = first['adm2']?.toString() ?? '';
-    final name = first['name']?.toString() ?? city;
-    // 相邻重复段折叠：和风在直辖市常把 adm1/adm2 都填「北京市」，直接拼接会得到
-    // 「北京市 北京市 朝阳区」这类冗余行政链（文档出参示例为「北京市 朝阳区」）。
-    final display = [adm1, adm2, name]
-        .where((s) => s.isNotEmpty)
-        .fold<List<String>>(<String>[], (List<String> acc, String s) {
-      if (acc.isEmpty || acc.last != s) acc.add(s);
-      return acc;
-    }).join(' ');
-
-    final loc = _Loc(id, display, id);
+    final loc = _Loc(lid, first.name, lid);
     _cityCache[city] = loc;
     return loc;
+  }
+
+  /// 城市搜索（UI 搜索条）：GeoAPI lookup **多候选**投影；「查无此城」= 成功
+  /// 空列表（非错误）。Key/Host 缺失等失败走结构化信封，不静默空列表。
+  @override
+  Future<CitySearchResult> searchCity(String query) async {
+    final q = query.trim();
+    if (q.isEmpty) {
+      return const CitySearchResult.success(<QCityOption>[]);
+    }
+    try {
+      await _ensureKey();
+      final ep = await _geoEndpoint();
+      final body = await _get(ep.host, ep.path, {'location': q});
+      return CitySearchResult.success(_parseCityOptions(body, fallbackName: q));
+    } on _WeatherFail catch (e) {
+      if (e.code == WeatherErr.cityNotFound) {
+        return const CitySearchResult.success(<QCityOption>[]);
+      }
+      return CitySearchResult.failure(
+          WeatherError(e.code, e.message, suggestion: e.suggestion));
+    }
+  }
+
+  /// 坐标反查城市（地图选点加城市）：GeoAPI lookup 直查坐标，**经度在前、
+  /// 两位小数**（与天气查询 `_lngLat` 同口径）。「查无此城」（海域/无人区）=
+  /// 成功空列表；Key/Host 缺失等失败走结构化信封，不静默空列表。
+  @override
+  Future<CitySearchResult> lookupCityByCoords({
+    required double lat,
+    required double lng,
+  }) async {
+    try {
+      await _ensureKey();
+      final ep = await _geoEndpoint();
+      final body =
+          await _get(ep.host, ep.path, {'location': _lngLat(lng, lat)});
+      return CitySearchResult.success(
+          _parseCityOptions(body, fallbackName: '所选位置'));
+    } on _WeatherFail catch (e) {
+      if (e.code == WeatherErr.cityNotFound) {
+        return const CitySearchResult.success(<QCityOption>[]);
+      }
+      return CitySearchResult.failure(
+          WeatherError(e.code, e.message, suggestion: e.suggestion));
+    }
+  }
+
+  /// GeoAPI `location` 列表 → 类型化候选（行政链折叠与 `_lookupCity` 同口径）。
+  List<QCityOption> _parseCityOptions(
+    Map<String, Object?> body, {
+    required String fallbackName,
+  }) {
+    final raw = body['location'] is List ? body['location'] as List : const [];
+    return raw.whereType<Map>().map((e) {
+      final m = e.cast<String, Object?>();
+      final adm1 = m['adm1']?.toString() ?? '';
+      final adm2 = m['adm2']?.toString() ?? '';
+      final name = m['name']?.toString() ?? fallbackName;
+      // 相邻重复段折叠：和风在直辖市常把 adm1/adm2 都填「北京市」（文档出参
+      // 示例为「北京市 朝阳区」，见 `_lookupCity` 同款处理）。
+      final display = [adm1, adm2, name]
+          .where((s) => s.isNotEmpty)
+          .fold<List<String>>(<String>[], (List<String> acc, String s) {
+        if (acc.isEmpty || acc.last != s) acc.add(s);
+        return acc;
+      }).join(' ');
+      final lat = double.tryParse(m['lat']?.toString() ?? '');
+      final lng = double.tryParse(m['lon']?.toString() ?? '');
+      return QCityOption(
+        name: display,
+        lat: lat ?? 0,
+        lng: lng ?? 0,
+        locationId: m['id']?.toString(),
+      );
+    }).toList(growable: false);
   }
 
   // ---------------------------------------------------------------------------
@@ -437,6 +740,15 @@ class QWeatherProvider implements WeatherProvider {
             '核对 API Key 是否有效、且已绑定该 Host 所属账号');
       case HttpStatus.forbidden:
       case HttpStatus.paymentRequired:
+        if (_isSecurityRestriction(detail)) {
+          return _WeatherFail(
+            WeatherErr.unauthorized,
+            '和风安全限制拦截（HTTP $status）$suffix',
+            'Key 与 Host 本身有效；请求被账号控制台的安全设置拦下'
+                '（IP 白名单/访问限制）。请到和风控制台检查安全设置，'
+                '或改用经纬度/预设城市绕开被拦的接口',
+          );
+        }
         if (_isHostProblem(detail)) return _hostInvalid(detail);
         return _WeatherFail(WeatherErr.unauthorized,
             '和风鉴权失败（HTTP $status）$suffix',
@@ -459,6 +771,12 @@ class QWeatherProvider implements WeatherProvider {
         d.contains('not accessible') ||
         d.contains('service not found') ||
         d.contains('host not');
+  }
+
+  /// 安全限制类真因：控制台安全设置（IP 白名单/访问限制）拦截，Key 本身有效。
+  bool _isSecurityRestriction(String detail) {
+    final d = detail.toLowerCase();
+    return d.contains('security restriction') || d.contains('安全限制');
   }
 
   /// Host 无效 / 服务未开通：独立错误码，便于 Agent 走「去设置改 Host」自愈。

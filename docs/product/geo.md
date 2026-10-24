@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-10-23
+updated: 2026-10-24
 ---
 
 # goodTools · 轻量地理与地图能力（高德 Web 服务 + 传感器）
@@ -46,10 +46,11 @@ updated: 2026-10-23
 
 | 工具 | 档 | 入参 | 出参 | 职责 |
 |---|---|---|---|---|
-| `geo_current` | R | `{coordSystem?: "WGS84"\|"GCJ02"}` | `{lat, lng, accuracy, coordSystem, timestamp}` | 获取设备当前绝对坐标 |
+| `geo_current` | R | `{coordSystem?: "WGS84"\|"GCJ02"}` | `{lat, lng, accuracy?, coordSystem, timestamp, source: "gps"\|"ip"}` | 获取当前绝对坐标：GPS 定位优先；**无定位权限/硬件时回退 IP 定位**（`source: "ip"`，GCJ-02，无 accuracy） |
+| `geo_ip_locate` | R | — | `{lat, lng, province?, city?, adcode?, coordSystem: "GCJ02", source: "ip"}` | IP 定位兜底原语（高德 `/v3/ip`，按出口 IP 粗定位）：`geo_current` 末级回退的独立入口；解析失败 fail-closed 报错不编造 |
 | `geo_geocode` | R | `{address, city?}` | `{results: [{lat, lng, formattedAddress, province, city, district}]}` | 地址/地名转坐标 |
 | `geo_reverse` | R | `{lat, lng, coordSystem?}` | `{formattedAddress, province, city, district, town, poiName?}` | 坐标转详细地址与行政区 |
-| `geo_search_poi` | R | `{keywords, city?, near?: {lat, lng}}` | `{pois: [{id, name, type, address, lat, lng, distance?}]}` | 周边或城市关键字 POI 检索 |
+| `geo_search_poi` | R | `{keywords, city?, near?: {lat, lng}, radius?}` | `{pois: [{id, name, type, address, lat, lng, distance?}]}` | POI 检索：传 `near` 走周边检索（`/v3/place/around`，`radius` 米，缺省由高德默认），否则城市关键字检索（`/v3/place/text`） |
 | `geo_route` | R | `{from: {lat, lng}, to: {lat, lng}, mode: "driving"\|"walking"\|"bicycling"\|"transit", strategy?, city?}` | `{durationSec, distanceMeters, taxiCost?, steps: [{instruction, distance, duration}]}` | 多模态路径规划与导航步步拆解；`mode=transit` 时 `city` 必填（缺则内核自动逆地理推导） |
 | `geo_static_map` | R | `{center?: {lat, lng}, zoom?: int, size?: "width*height", markers?: [...], paths?: [...], autoFit?: bool, bounds?: {minLat,minLng,maxLat,maxLng}, secret?: string}` | `{url: string}` | 生成高德静态轻量切片预览图 URL；`paths` 自动 RDP 抽稀≤80 点防 414；`autoFit`/`bounds` 自动逆算 zoom；`secret` 触发 `sig` 签名 |
 | `geo_compass` | R | — | `{heading: double, direction: string, accuracy: int}` | 获取磁力计方位角与八方位文字 |

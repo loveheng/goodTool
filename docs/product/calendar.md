@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-10-20
+updated: 2026-10-24
 ---
 
 # goodTools · 日历能力（日历基准 + 重要事件标记 + 时间推演）
@@ -39,6 +39,7 @@ updated: 2026-10-20
 | `calendar_date_diff` | R | `{startDate, endDate, excludeWeekends?, excludeHolidays?}` | `{totalDays, workdays, span:{years,months,days,hours}}` | 精确跨度与工作日统计（纯函数） |
 | `calendar_workdays_between` | R | `{startDate, endDate}` | `{totalDays, workdays, holidays:[...], adjustments:[...]}` | 区间节假日 / 调休补班明细透视 |
 | `calendar_tz_convert` | R | `{datetime, fromTz, toTz}` | `{target, offset, dstActive}` | 时区投影 / 世界时钟（纯函数） |
+| `time_now` | R | `{timezone?}` | `{now, epochMs, timezone, offset, dstActive, date, weekday, isWorkday, holidayName?}` | 当前时刻锚点：设备现时在指定时区的投影 + 工作日/节假日上下文（反 Agent 编日期的幻觉源；纯函数） |
 
 > 档位：R = 读（Agent 自由调用）；W = 用户委托写（仅已鉴权 MCP 会话内可用，见「信任与授权」）。
 
@@ -66,7 +67,7 @@ MCP 会话的 token 鉴权（`McpServer.tokenProvider` 返回非空）= 用户�
 
 | 档 | 工具 | 放行条件 |
 |---|---|---|
-| **R 读** | `calendar_query` / `calendar_feeds` / `calendar_month_grid` / `calendar_resolve_date` / `calendar_marker_list` / `calendar_date_calc` / `calendar_date_diff` / `calendar_workdays_between` / `calendar_tz_convert` | Agent 自由调用 |
+| **R 读** | `calendar_query` / `calendar_feeds` / `calendar_month_grid` / `calendar_resolve_date` / `calendar_marker_list` / `calendar_date_calc` / `calendar_date_diff` / `calendar_workdays_between` / `calendar_tz_convert` / `time_now` | Agent 自由调用 |
 | **W 委托写** | `calendar_subscribe` / `calendar_unsubscribe` / `calendar_refresh` / `calendar_marker_add` / `calendar_marker_delete` | 仅当 MCP 会话已鉴权（token 非空） |
 
 **两道硬控制（可落地的代码护栏，非弹窗确认）：**

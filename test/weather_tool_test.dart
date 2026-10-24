@@ -52,12 +52,18 @@ void main() {
       );
 
   group('能力面对账', () {
-    test('weather 分类恰好 1 个 action：weather_forecast', () {
+    test('weather 分类恰好 5 个 action（forecast + 域深化四件）', () {
       final props =
           (buildWeatherTool(const NullWeatherProvider()).toSchema()['inputSchema']
               as Map)['properties'] as Map;
-      expect(((props['action'] as Map)['enum'] as List).cast<String>(),
-          ['weather_forecast']);
+      expect(((props['action'] as Map)['enum'] as List).cast<String>()..sort(),
+          [
+            'weather_air',
+            'weather_astronomy',
+            'weather_forecast',
+            'weather_indices',
+            'weather_minutely',
+          ]);
     });
 
     test('描述带紧凑参数签名（消参数盲盒）', () {
@@ -203,6 +209,74 @@ void main() {
       expect(r.content.first['text'], contains('UNKNOWN_ACTION'));
     });
   });
+
+  group('域深化四件派发冒烟（air / indices / astronomy / minutely）', () {
+    test('weather_air：now 投影到 air 键 + 失败信封透传', () async {
+      final cat = buildWeatherTool(_MockWeather(WeatherResult.success(
+        city: '北京市 朝阳区',
+        updateTime: '2026-10-20T12:00+08:00',
+        now: const <String, Object?>{'aqi': '55', 'category': '良'},
+      )));
+      final j = jsonOf(await cat.call('weather_air', {'city': '北京'}));
+      expect(j['success'], isTrue);
+      expect((j['air'] as Map)['aqi'], '55');
+      expect(j['isCached'], isFalse);
+
+      final bad = buildWeatherTool(_MockWeather(WeatherResult.failure(
+          const WeatherError(WeatherErr.keyMissing, 'Key 未配置'))));
+      final e = jsonOf(await bad.call('weather_air', {}))['error'] as Map<String, Object?>;
+      expect(e['code'], contains('KEY_MISSING'));
+    });
+
+    test('weather_indices：列表投影 + days=2 拒绝 + type 非数字拒绝', () async {
+      final cat = buildWeatherTool(_MockWeather(const WeatherResult.success(
+        forecast: <Map<String, Object?>>[
+          {'date': '2026-10-20', 'name': '穿衣指数', 'level': '5'},
+        ],
+      )));
+      final j = jsonOf(await cat.call('weather_indices', {'days': 3}));
+      expect(j['indices'], hasLength(1));
+      expect(j['days'], 3);
+
+      for (final bad in <Map<String, Object?>>[
+        {'days': 2},
+        {'type': 'abc'},
+        {'days': 'x'},
+      ]) {
+        final e =
+            jsonOf(await cat.call('weather_indices', bad))['error']! as Map;
+        expect(e['code'], contains('INVALID_ARGUMENT'), reason: '$bad 应被拒');
+      }
+      final miss = jsonOf(
+          await cat.call('weather_indices', {'lat': 39.9}))['error'] as Map<String, Object?>;
+      expect(miss['code'], contains('MISSING_ARGUMENT'));
+    });
+
+    test('weather_astronomy：now 投影到 solar 键 + date 格式校验', () async {
+      final cat = buildWeatherTool(_MockWeather(const WeatherResult.success(
+        now: <String, Object?>{'sunrise': '06:15', 'sunset': '17:35'},
+      )));
+      final j = jsonOf(
+          await cat.call('weather_astronomy', {'date': '2026-10-25'}));
+      expect((j['solar'] as Map)['sunrise'], '06:15');
+      final e = jsonOf(await cat.call('weather_astronomy', {
+        'date': '10-25',
+      }))['error'] as Map<String, Object?>;
+      expect(e['code'], contains('INVALID_ARGUMENT'));
+    });
+
+    test('weather_minutely：summary + 序列投影', () async {
+      final cat = buildWeatherTool(_MockWeather(const WeatherResult.success(
+        now: <String, Object?>{'summary': '未来两小时不会下雨'},
+        forecast: <Map<String, Object?>>[
+          {'fxTime': '2026-10-20T12:05+08:00', 'precip': '0.0'},
+        ],
+      )));
+      final j = jsonOf(await cat.call('weather_minutely', {}));
+      expect(j['summary'], '未来两小时不会下雨');
+      expect(j['minutely'], hasLength(1));
+    });
+  });
 }
 
 /// 调用参数快照（供断言透传是否保真）。
@@ -232,4 +306,44 @@ class _MockWeather implements WeatherProvider {
         _ForecastParams(city: city, lat: lat, lng: lng, days: days));
     return _result;
   }
+
+  @override
+  Future<CitySearchResult> searchCity(String query) async =>
+      const CitySearchResult.success(<QCityOption>[]);
+
+  @override
+  Future<CitySearchResult> lookupCityByCoords({
+    required double lat,
+    required double lng,
+  }) async =>
+      const CitySearchResult.success(<QCityOption>[]);
+
+  @override
+  Future<WeatherResult> air({String? city, double? lat, double? lng}) async =>
+      _result;
+
+  @override
+  Future<WeatherResult> indices({
+    String? city,
+    double? lat,
+    double? lng,
+    int days = 1,
+    String? type,
+  }) async =>
+      _result;
+
+  @override
+  Future<WeatherResult> astronomy({
+    String? city,
+    double? lat,
+    double? lng,
+    String? date,
+  }) async =>
+      _result;
+
+  @override
+  Future<WeatherResult> minutely({String? city, double? lat, double? lng}) async =>
+      _result;
 }
+
+/// 天气域深化四件的派发冒烟：Mock 回放固定信封，断言投影映射与入参校验。

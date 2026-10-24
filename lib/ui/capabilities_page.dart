@@ -89,7 +89,7 @@ const List<_DomainEntry> _entries = <_DomainEntry>[
   _DomainEntry(
     domain: AppDomain.geo,
     title: '地图',
-    summary: '坐标纠偏（三系同屏）与两点测距',
+    summary: '搜索选点 · 四模态路线 · 测距 · 收藏 · 坐标纠偏',
     dependency: '无需任何依赖',
     icon: Icons.map_outlined,
   ),

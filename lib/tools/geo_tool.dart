@@ -19,12 +19,12 @@ import '../mcp/geo_provider.dart';
 /// 合法的路径规划模式（高德四模态，超出即 INVALID_ARGUMENT，不静默兜底 driving）。
 const Set<String> _routeModes = {'driving', 'walking', 'bicycling', 'transit'};
 
-/// 公开入口：构建 `geo` 领域网关，注册 8 个子操作。
+/// 公开入口：构建 `geo` 领域网关，注册 9 个子操作。
 ///
 /// 全部 R 档（geo.md 档位表均为 R），[CategoryTool.commandGateway] 传 null
 /// ——[CategoryTool.call] 仅 W 档才触达网关，R 档物理不可穿透（fail-closed）。
 ///
-/// [sensor] 设备定位/磁力计端口；[http] 高德 Web 服务端口；
+/// [sensor] 设备定位/磁力计端口；[http] 高德 Web 服务端口（含 IP 定位兜底）；
 /// [webKeyReader]/[secretReader] 静态图 URL 拼装所需配置（成像签名用，无则不出图）——
 /// **同步构造器 + 异步懒读**：装配面（`main.dart` / `mcp_binder_entrypoint.dart`）是
 /// 同步的，而 KV 读配置是异步的，故把读取推到子操作执行时；副作用是用户在设置里
@@ -40,12 +40,14 @@ CategoryTool buildGeoTool(
 }) {
   final cat = CategoryTool(
     'geo',
-    '地理与地图：当前定位 / 正逆地理编码 / POI 检索 / 多模态路径规划 / 静态图 / 指南针 / 测距。'
+    '地理与地图：当前定位（GPS 优先，无权限回退 IP 定位）/ 正逆地理编码 / POI 检索'
+    '（城市关键字 + 周边检索）/ 多模态路径规划 / 静态图 / 指南针 / 测距。'
     '入参坐标可用 coordSystem 声明 WGS84|GCJ02（GPS 原生默认 WGS84），内核在调用高德前统一归一化到 GCJ-02。',
     null,
     visibility: ToolVisibility.shared,
   );
-  cat.register(_GeoCurrentSub(sensor));
+  cat.register(_GeoCurrentSub(sensor, http));
+  cat.register(_GeoIpLocateSub(http));
   cat.register(_GeoCompassSub(sensor));
   cat.register(_GeoDistanceSub(http));
   cat.register(_GeoGeocodeSub(http));
@@ -162,17 +164,20 @@ Future<SubActionResult> _amapGet(
 // ---------------------------------------------------------------------------
 
 class _GeoCurrentSub extends SubAction {
-  _GeoCurrentSub(this._sensor);
+  _GeoCurrentSub(this._sensor, this._http);
 
   final LocationSensorProvider _sensor;
+  final GeoHttpProvider _http;
 
   @override
   String get name => 'geo_current';
 
   @override
   String get description =>
-      '获取设备当前绝对坐标（经纬度 + 水平精度 + 时间戳），可用 coordSystem 指定输出坐标系'
-      '（缺省按传感器原生系输出）。缺定位权限或无硬件返回 PERMISSION_DENIED，引导回 App 授权。';
+      '获取当前绝对坐标（经纬度 + 水平精度 + 时间戳），可用 coordSystem 指定输出坐标系'
+      '（缺省按来源原生系输出）。定位链：GPS 传感器优先；**无定位权限/硬件时回退 '
+      'IP 定位**（source=ip，GCJ-02 粗定位，无 accuracy 与实时时间戳）。'
+      '两级皆失败返回 PERMISSION_DENIED。';
 
   @override
   String get paramSignature =>
@@ -181,27 +186,130 @@ class _GeoCurrentSub extends SubAction {
   @override
   Future<SubActionResult> execute(Map<String, Object?> params) async {
     final reading = await _sensor.current();
-    if (reading == null) {
-      return _err('PERMISSION_DENIED', '无定位权限或定位硬件不可用');
+    if (reading != null) {
+      final from = _systemOf(reading.coordSystem);
+      // 未显式指定目标系时按传感器原生系原样输出，避免多余一次数值往返。
+      final requested = params['coordSystem'] is String
+          ? _systemOf(params['coordSystem'])
+          : from;
+      final p = CoordConvert.normalize(
+          GeoPoint(reading.lat, reading.lng), from, requested);
+      final payload = <String, Object?>{
+        'success': true,
+        'lat': p.lat,
+        'lng': p.lng,
+        'accuracy': reading.accuracy,
+        'coordSystem': _nameOf(requested),
+        'timestamp': reading.timestamp,
+        'source': 'gps',
+      };
+      if (reading.altitude != null) payload['altitude'] = reading.altitude;
+      return _jsonSuccess(payload);
     }
-    final from = _systemOf(reading.coordSystem);
-    // 未显式指定目标系时按传感器原生系原样输出，避免多余一次数值往返。
+    // GPS 失败 → IP 定位兜底（fail-closed：IP 也失败才报错，不编造坐标）。
+    final ip = await _ipLocateOrNull();
+    if (ip == null) {
+      return _err('PERMISSION_DENIED', '无定位权限或定位硬件不可用（IP 定位兜底亦失败）');
+    }
     final requested = params['coordSystem'] is String
         ? _systemOf(params['coordSystem'])
-        : from;
-    final p = CoordConvert.normalize(
-        GeoPoint(reading.lat, reading.lng), from, requested);
-    final payload = <String, Object?>{
+        : CoordSystem.gcj02; // IP 定位原生 GCJ-02，缺省不再绕一道换算。
+    final p = CoordConvert
+        .normalize(GeoPoint(ip.$2, ip.$1), CoordSystem.gcj02, requested);
+    return _jsonSuccess(<String, Object?>{
       'success': true,
       'lat': p.lat,
       'lng': p.lng,
-      'accuracy': reading.accuracy,
       'coordSystem': _nameOf(requested),
-      'timestamp': reading.timestamp,
-    };
-    if (reading.altitude != null) payload['altitude'] = reading.altitude;
-    return _jsonSuccess(payload);
+      'source': 'ip',
+      if (ip.$3 != null) 'province': ip.$3,
+      if (ip.$4 != null) 'city': ip.$4,
+      if (ip.$5 != null) 'adcode': ip.$5,
+    });
   }
+
+  /// IP 定位（高德 `/v3/ip`）：成功回 `(lng, lat, province, city, adcode)` 中心点；
+  /// 任何失败（Key 缺失 / 网络失败 / 结构漂移）收敛为 null——兜底路径不把
+  /// 兜底失败伪装成第二优先级成功。
+  Future<(double, double, String?, String?, String?)?> _ipLocateOrNull() async {
+    try {
+      final body = await _http.get('/v3/ip', const <String, String>{});
+      if (body['status']?.toString() != '1') return null;
+      final rect = body['rectangle'];
+      final center = _rectangleCenter(rect?.toString());
+      if (center == null) return null;
+      String? str(Object? v) =>
+          v is String && v.trim().isNotEmpty ? v.trim() : null;
+      return (
+        center.lng,
+        center.lat,
+        str(body['province']),
+        str(body['city']),
+        str(body['adcode']),
+      );
+    } on Exception {
+      return null;
+    }
+  }
+}
+
+/// 高德 `/v3/ip` 的 `rectangle`（`"lng1,lat1;lng2,lat2"`）→ 中心点；漂移/缺失返 null。
+GeoPoint? _rectangleCenter(String? raw) {
+  if (raw == null) return null;
+  final parts = raw.split(';');
+  if (parts.length != 2) return null;
+  final a = _parseLocationString(parts[0]);
+  final b = _parseLocationString(parts[1]);
+  if (a == null || b == null) return null;
+  return GeoPoint((a.lat + b.lat) / 2, (a.lng + b.lng) / 2);
+}
+
+// ---------------------------------------------------------------------------
+// geo_ip_locate：IP 定位兜底原语（geo_current 末级回退的独立入口）
+// ---------------------------------------------------------------------------
+
+class _GeoIpLocateSub extends SubAction {
+  _GeoIpLocateSub(this._http);
+
+  final GeoHttpProvider _http;
+
+  @override
+  String get name => 'geo_ip_locate';
+
+  @override
+  String get description =>
+      'IP 定位兜底（高德 /v3/ip，按网络出口 IP 粗定位）：返回 GCJ-02 坐标'
+      '（rectangle 中心点）与省/市/区划码。精度远低于 GPS（城市级），'
+      '适用于无定位权限/室内漂移场景；解析失败 fail-closed 报错，不编造坐标。'
+      'geo_current 已内置本能力作末级回退，通常无需单独调用。';
+
+  @override
+  String get paramSignature => 'geo_ip_locate() [无入参]';
+
+  @override
+  Future<SubActionResult> execute(Map<String, Object?> params) => _amapGet(
+        _http,
+        '/v3/ip',
+        const <String, String>{},
+        (body) {
+          final center = _rectangleCenter(body['rectangle']?.toString());
+          if (center == null) {
+            throw const FormatException('IP 定位缺少 rectangle（无法取中心点）');
+          }
+          String? str(Object? v) =>
+              v is String && v.trim().isNotEmpty ? v.trim() : null;
+          // 高德对无法识别城市的场景会把 city 返回为空数组——归一为缺省不出键。
+          return <String, Object?>{
+            'lat': center.lat,
+            'lng': center.lng,
+            'coordSystem': 'GCJ02',
+            'source': 'ip',
+            if (str(body['province']) != null) 'province': str(body['province']),
+            if (str(body['city']) != null) 'city': str(body['city']),
+            if (str(body['adcode']) != null) 'adcode': str(body['adcode']),
+          };
+        },
+      );
 }
 
 // ---------------------------------------------------------------------------
@@ -456,14 +564,20 @@ class _GeoSearchPoiSub extends SubAction {
 
     final query = <String, String>{'keywords': keywords.trim()};
     if (city is String && city.trim().isNotEmpty) query['city'] = city.trim();
+    String? aroundLocation;
     if (near != null) {
       final g = CoordConvert.normalize(
           near, _systemOf(params['coordSystem']), CoordSystem.gcj02);
-      query['location'] = _locQuery(g);
+      aroundLocation = _locQuery(g);
+      query['location'] = aroundLocation;
     }
     if (radius != null && radius > 0) query['radius'] = '$radius';
 
-    return _amapGet(_http, '/v3/place/text', query, (body) {
+    // 传 near = 周边检索（/v3/place/around，radius 生效）；否则城市关键字检索
+    // （/v3/place/text——text 端点不吃 location/radius，错端点等于静默失效）。
+    return _amapGet(
+        _http, aroundLocation != null ? '/v3/place/around' : '/v3/place/text',
+        query, (body) {
       final raw = body['pois'] is List ? body['pois'] as List : const <Object?>[];
       final pois = raw.map((e) {
         final m = e is Map ? e : null;

@@ -270,11 +270,14 @@ class _CalculatorPageState extends State<CalculatorPage> {
       ),
     );
     if (confirmed ?? false) {
-      setState(() {
-        for (final record in _records) {
+      final old = _records;
+      setState(() => _records = <_LineRecord>[_LineRecord('')]);
+      // 旧控制器延后一帧释放：被清块可能正持有焦点/IME 连接，
+      // 同帧 dispose 会在 TextField 卸载前触发 use-after-dispose。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        for (final record in old) {
           record.controller.dispose();
         }
-        _records = <_LineRecord>[_LineRecord('')];
       });
       _scheduleSave();
       _recalculate();
@@ -620,7 +623,7 @@ class _CalculatorPageState extends State<CalculatorPage> {
         children: <Widget>[
           readout('有效行', '${summary.validCount}'),
           readout('最终 ans', summary.finalAns ?? '—'),
-          readout('累计总和', summary.totalSum),
+          readout('全表合计（含换算）', summary.totalSum),
         ],
       ),
     );
@@ -669,6 +672,10 @@ class _CalculatorPageState extends State<CalculatorPage> {
           SizedBox(height: t.metrics.space4),
           Text(
             '逐块输入算式即出结果：1200 * 85% · 10 km to mi · ans + 50（引用上一成功块）',
+            style: t.typeScale.micro.copyWith(color: t.palette.textMuted),
+          ),
+          Text(
+            '点结果复制数值 · 长按结果更多操作 · 点错误直达故障行',
             style: t.typeScale.micro.copyWith(color: t.palette.textMuted),
           ),
           SizedBox(height: t.metrics.space12),

@@ -77,7 +77,7 @@ class CompositeCalendarProvider implements CalendarFeedProvider {
             : await _maskPiiEnabled();
         out.addAll(raw.map((r) => _toEvent(r, mask: mask)));
       } on CalendarFeedException catch (e) {
-        warnings.add(_warn(e.code, e.message));
+        warnings.add(_warn(e.code, e.message, suggestion: e.suggestion));
       }
     }
 
@@ -90,10 +90,14 @@ class CompositeCalendarProvider implements CalendarFeedProvider {
         warnings: List.unmodifiable(warnings));
   }
 
-  Map<String, Object?> _warn(String code, String message) => <String, Object?>{
+  /// 子源失败警告；`suggestion` 为自愈指引（值空感知出键——空则整项省略，见
+  /// lessons「空值感知元素修饰的是值不是键」）。
+  Map<String, Object?> _warn(String code, String message, {String? suggestion}) =>
+      <String, Object?>{
         'source': kSystemCalendarFeedId,
         'code': code,
         'message': message,
+        'suggestion': ?suggestion,
       };
 
   @override

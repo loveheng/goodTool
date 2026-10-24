@@ -45,12 +45,21 @@ void main() {
       expect(names, ['math_utility', 'geo', 'weather', 'system_pim']);
     });
 
-    test('action 合计 27 项（math 4 + geo 8 + weather 1 + pim 14），与矩阵闭环', () {
+    test('action 合计 33 项（math 4 + geo 9 + weather 5 + pim 15），与矩阵闭环', () {
       expect(actionsOf('math_utility'),
           ['calc_eval', 'unit_convert', 'unit_list', 'list_stats']);
-      expect(actionsOf('geo').length, 8);
-      expect(actionsOf('weather'), ['weather_forecast']);
-      expect(actionsOf('system_pim'), hasLength(14));
+      expect(actionsOf('geo').length, 9);
+      expect(
+        actionsOf('weather')..sort(),
+        [
+          'weather_air',
+          'weather_astronomy',
+          'weather_forecast',
+          'weather_indices',
+          'weather_minutely',
+        ],
+      );
+      expect(actionsOf('system_pim'), hasLength(15));
       expect(
         actionsOf('system_pim'),
         containsAll(<String>[
@@ -265,6 +274,44 @@ class _WeatherStub implements WeatherProvider {
         city: '北京市 朝阳区',
         locationId: '101010100',
       );
+
+  @override
+  Future<CitySearchResult> searchCity(String query) async =>
+      const CitySearchResult.success(<QCityOption>[]);
+
+  @override
+  Future<CitySearchResult> lookupCityByCoords({
+    required double lat,
+    required double lng,
+  }) async =>
+      const CitySearchResult.success(<QCityOption>[]);
+
+  @override
+  Future<WeatherResult> air({String? city, double? lat, double? lng}) async =>
+      const WeatherResult.failure(WeatherError(WeatherErr.keyMissing, '桩'));
+
+  @override
+  Future<WeatherResult> indices({
+    String? city,
+    double? lat,
+    double? lng,
+    int days = 1,
+    String? type,
+  }) async =>
+      const WeatherResult.failure(WeatherError(WeatherErr.keyMissing, '桩'));
+
+  @override
+  Future<WeatherResult> astronomy({
+    String? city,
+    double? lat,
+    double? lng,
+    String? date,
+  }) async =>
+      const WeatherResult.failure(WeatherError(WeatherErr.keyMissing, '桩'));
+
+  @override
+  Future<WeatherResult> minutely({String? city, double? lat, double? lng}) async =>
+      const WeatherResult.failure(WeatherError(WeatherErr.keyMissing, '桩'));
 }
 
 /// 高德 HTTP 桩：只验证「已配 Key 即放行」，不模拟真实响应体。

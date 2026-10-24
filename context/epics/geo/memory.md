@@ -2,8 +2,8 @@
 dev-loop: memory
 format: v1
 epic: geo
-total-merged: 0
-last-merge: none
+total-merged: 1
+last-merge: 2026-10-24
 ---
 
 # geo
@@ -24,5 +24,14 @@ last-merge: none
   - **处置**：① 定位源任何失败一律 fail-closed 返 null（`[LOC]` 日志留原因）；② 分档回退 高精度 GPS(12s) → 低精度网络(8s) → 上次已知位置（仅采信 2 分钟内新鲜读数）；③ UI 侧 `_readLocation()` 兜底 try/catch（纵深防御），失败给可重试提示。
   - **未闭环**：真机未连（本轮无设备），进场自动定位的真实 GPS 冷启动表现与权限弹窗流程**仍待真机验收**。
 
+- 2026-10-22~24 **地图 UI 全量演进（多轮迭代，测验 561 全绿收口）**：
+  - **收藏地点**：favorite_place_store（geo_favorites 键上限 50）+ user_geo_favorite_add/delete 命令/Actor + FavoriteRepository（R5）+ 收藏夹分类（`FavoritePlace.folder` 派生分组——夹名随收藏存在、删空自然消失，不设删夹命令防级联；`groupFavoritesByFolder` 纯函数分组）。
+  - **SSOT 修正**：静态切片轻量方案 ➔ 交互画布 flutter_map 8.x + 高德矢量瓦片（amap_flutter_map 整体退役，decisions.md 2026-10-22 裁定 Ref: decisions#2026-10-22；pub-cache 补丁债随之清零）。
+  - **页面结构（后续 weather 页复用范式）**：全屏地图 + `DraggableScrollableSheet`（snap、竖屏 0.22/0.95 横屏 0.35/0.75、40dp 把手、`viewInsets.bottom` 防键盘遮挡）；搜索框手势用 **Listener 而非 GestureDetector**（TextField 竖拖选文本的竞技场冲突），聚焦时 `FocusNode` 守卫禁拖拽，±60dp 快甩展/收 240ms easeOut；面板内容 ChoiceChip 分段单功能完整面；浮动按钮列（缩放/指北/我的位置）+ 呼吸蓝点 + 暗色瓦片压暗遮罩 + 毛玻璃 + 指北针 + 比例尺。
+  - **路线三件套**：默认起点=定位；步骤公共区块（徽章+TelemetryText+方位徽章）；`lib/geo/route_guidance.dart` 纯内核转向解析（掉头>环岛>出发/到达>小角度>左右>直行）+ 地图转向标 Marker。
+  - **定位**：`SystemLocationSensorProvider`（geolocator 14.1.2）单实例四处共用（MCP geo_current / 地图 / 天气回退 / 状态页）；**任何异常 fail-closed 返 null**（geolocator 还会抛 LocationServiceDisabledException/PermissionDeniedException，不止 TimeoutException）；分档回退 GPS 12s→网络 8s→2 分钟内上次已知；geo_last_location 会话键 + Actor + Port 进场先恢复相机再刷新。
+  - **体验修复三批（17 项）**：测距满 2 点不清空、搜索结果显式设起/终点按钮、收藏点击不隐式设终点、错误提示去机器码留人话、计算器合计语义/清空延迟释放、日历权限提示清理、天气数字键盘+天数前置校验、设置页按项隔离 saving 等；排查清单已清零。
+  - **未闭环**：真机验收 17 项全量清单 + 定位真实 GPS 冷启动表现（无设备轮，已登记域内待办）。
+
 ## 断点
-- [断点] 下一步：下一步：真机验收——进场先显示上次位置再刷新定位；之后可做新一轮构建
+- [断点] 下一步：geo 深化两洞已闭环（ip_locate/current 兜底/poi around，测验全绿）；真机验证 IP 定位兜底链路 + transit city 自动逆推仍为域内 L3 待办

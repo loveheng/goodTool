@@ -38,7 +38,10 @@ class _SettingsPageState extends State<SettingsPage> {
 
   UserSettingsSnapshot? _snapshot;
   bool _loading = true;
-  bool _saving = false;
+
+  /// 正在保存的键（provider/setting key/identity）——按项隔离，保存一项
+  /// 只禁用该项按钮，其余配置不陪跑禁用（否则像「卡住了」）。
+  String? _savingKey;
   String? _feedback;
   bool _feedbackIsError = false;
 
@@ -93,18 +96,18 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _saveApiKey(String provider, String value) async {
-    setState(() => _saving = true);
+    setState(() => _savingKey = provider);
     final result = await widget.port.setApiKey(provider: provider, key: value);
     if (!mounted) return;
-    setState(() => _saving = false);
+    setState(() => _savingKey = null);
     _report(result);
   }
 
   Future<void> _savePlainSetting(String key, String value) async {
-    setState(() => _saving = true);
+    setState(() => _savingKey = key);
     final result = await widget.port.setSetting(key: key, value: value);
     if (!mounted) return;
-    setState(() => _saving = false);
+    setState(() => _savingKey = null);
     _report(result);
   }
 
@@ -114,10 +117,10 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _saveIdentity() async {
-    setState(() => _saving = true);
+    setState(() => _savingKey = 'identity');
     final result = await widget.port.setIdentityProfile(_identity.text);
     if (!mounted) return;
-    setState(() => _saving = false);
+    setState(() => _savingKey = null);
     _report(result);
   }
 
@@ -152,7 +155,7 @@ class _SettingsPageState extends State<SettingsPage> {
             masked: _snapshot?.credentialMasked[SettingsKeys.amapWebKey] ?? '',
             onSave: (value) => _saveApiKey('amap', value),
             onClear: () => _saveApiKey('amap', ''),
-            saving: _saving,
+            saving: _savingKey == 'amap',
           ),
         ),
         SizedBox(height: t.metrics.space16),
@@ -166,7 +169,7 @@ class _SettingsPageState extends State<SettingsPage> {
             masked: _snapshot?.credentialMasked[SettingsKeys.qweatherKey] ?? '',
             onSave: (value) => _saveApiKey('qweather', value),
             onClear: () => _saveApiKey('qweather', ''),
-            saving: _saving,
+            saving: _savingKey == 'qweather',
           ),
         ),
         SizedBox(height: t.metrics.space16),
@@ -184,7 +187,7 @@ class _SettingsPageState extends State<SettingsPage> {
               value,
             ),
             onClear: () => _savePlainSetting(SettingsKeys.qweatherHost, ''),
-            saving: _saving,
+            saving: _savingKey == SettingsKeys.qweatherHost,
           ),
         ),
         SizedBox(height: t.metrics.space16),
@@ -231,7 +234,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               SizedBox(height: t.metrics.space8),
               FilledButton(
-                onPressed: _saving ? null : _saveIdentity,
+                onPressed: _savingKey == 'identity' ? null : _saveIdentity,
                 child: const Text('保存'),
               ),
             ],

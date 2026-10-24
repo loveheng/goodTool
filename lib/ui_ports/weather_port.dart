@@ -120,6 +120,44 @@ class WeatherView {
   final String? suggestion;
 }
 
+/// 城市搜索候选视图（GeoAPI lookup 投影；搜索条与「添加城市」用）。
+class WeatherCityOptionView {
+  const WeatherCityOptionView({
+    required this.name,
+    required this.lat,
+    required this.lng,
+    this.locationId,
+  });
+
+  /// 和风完整行政链（消重名歧义）。
+  final String name;
+
+  final double lat;
+  final double lng;
+
+  /// 和风 LocationID（留档用；取数按坐标直查）。
+  final String? locationId;
+}
+
+/// 城市搜索结果视图（永不 null 的类型化信封；「查无此城」= ok 且空列表）。
+class CitySearchView {
+  const CitySearchView({
+    required this.ok,
+    this.options = const <WeatherCityOptionView>[],
+    this.errorCode,
+    this.message,
+    this.suggestion,
+  });
+
+  final bool ok;
+
+  final List<WeatherCityOptionView> options;
+
+  final String? errorCode;
+  final String? message;
+  final String? suggestion;
+}
+
 /// 天气 UI 适配层：`WeatherProvider` → 类型化视图。
 ///
 /// 与 MCP 工具面**并列共享同一内核**（装配期注入同一 `QWeatherProvider`
@@ -182,6 +220,42 @@ class WeatherPort {
       days: r.forecast.map(_toDay).toList(growable: false),
       alerts: r.alerts.map(_toAlert).toList(growable: false),
       isCached: r.isCached,
+    );
+  }
+
+  /// 城市搜索（搜索条）：多候选类型化投影；「查无此城」= 成功空列表。
+  /// 未配 Key/Host 走结构化失败（UI 出依赖门），不静默空列表。
+  Future<CitySearchView> searchCity(String query) async =>
+      _toSearchView(await _provider.searchCity(query));
+
+  /// 坐标反查城市（地图页选点加城市）：投影同 [searchCity]。
+  Future<CitySearchView> lookupCityByCoords({
+    required double lat,
+    required double lng,
+  }) async =>
+      _toSearchView(await _provider.lookupCityByCoords(lat: lat, lng: lng));
+
+  /// `CitySearchResult` → `CitySearchView`（搜索与坐标反查共用同一投影）。
+  static CitySearchView _toSearchView(CitySearchResult r) {
+    if (!r.success) {
+      final e = r.error;
+      return CitySearchView(
+        ok: false,
+        errorCode: e?.code ?? 'ERR_WEATHER_UNKNOWN',
+        message: e?.message ?? '城市搜索失败',
+        suggestion: e?.suggestion,
+      );
+    }
+    return CitySearchView(
+      ok: true,
+      options: r.options
+          .map((o) => WeatherCityOptionView(
+                name: o.name,
+                lat: o.lat,
+                lng: o.lng,
+                locationId: o.locationId,
+              ))
+          .toList(growable: false),
     );
   }
 

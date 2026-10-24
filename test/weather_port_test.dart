@@ -10,6 +10,10 @@ class _FakeProvider implements WeatherProvider {
   _FakeProvider(this.result);
 
   final WeatherResult result;
+
+  /// 坐标反查的回放信封（默认空成功列表）。
+  CitySearchResult lookupResult = const CitySearchResult.success(<QCityOption>[]);
+
   int callCount = 0;
   Map<String, Object?>? lastArgs;
 
@@ -29,6 +33,47 @@ class _FakeProvider implements WeatherProvider {
     };
     return result;
   }
+
+  @override
+  Future<CitySearchResult> searchCity(String query) async =>
+      const CitySearchResult.success(<QCityOption>[]);
+
+  @override
+  Future<CitySearchResult> lookupCityByCoords({
+    required double lat,
+    required double lng,
+  }) async {
+    callCount++;
+    lastArgs = <String, Object?>{'lat': lat, 'lng': lng};
+    return lookupResult;
+  }
+
+  @override
+  Future<WeatherResult> air({String? city, double? lat, double? lng}) async =>
+      const WeatherResult.failure(WeatherError(WeatherErr.keyMissing, '桩'));
+
+  @override
+  Future<WeatherResult> indices({
+    String? city,
+    double? lat,
+    double? lng,
+    int days = 1,
+    String? type,
+  }) async =>
+      const WeatherResult.failure(WeatherError(WeatherErr.keyMissing, '桩'));
+
+  @override
+  Future<WeatherResult> astronomy({
+    String? city,
+    double? lat,
+    double? lng,
+    String? date,
+  }) async =>
+      const WeatherResult.failure(WeatherError(WeatherErr.keyMissing, '桩'));
+
+  @override
+  Future<WeatherResult> minutely({String? city, double? lat, double? lng}) async =>
+      const WeatherResult.failure(WeatherError(WeatherErr.keyMissing, '桩'));
 }
 
 void main() {
@@ -159,6 +204,44 @@ void main() {
       expect(v.ok, isTrue);
       expect(provider.lastArgs!['lat'], 39.9);
       expect(provider.lastArgs!['lng'], 116.4);
+    });
+  });
+
+  group('WeatherPort · 坐标反查城市（地图选点加城市）', () {
+    test('候选 → 类型化投影（name/lat/lng/locationId 保真）', () async {
+      final provider = _FakeProvider(const WeatherResult.success())
+        ..lookupResult = const CitySearchResult.success(<QCityOption>[
+          QCityOption(
+            name: '北京市 朝阳区',
+            lat: 39.92,
+            lng: 116.43,
+            locationId: '101010100',
+          ),
+        ]);
+      final v = await WeatherPort(provider)
+          .lookupCityByCoords(lat: 39.9215, lng: 116.4345);
+      expect(v.ok, isTrue);
+      expect(v.options, hasLength(1));
+      expect(v.options.single.name, '北京市 朝阳区');
+      expect(v.options.single.lat, 39.92);
+      expect(v.options.single.lng, 116.43);
+      expect(v.options.single.locationId, '101010100');
+      expect(provider.lastArgs!['lat'], 39.9215);
+      expect(provider.lastArgs!['lng'], 116.4345);
+    });
+
+    test('失败信封带机器码透传（不静默空列表）', () async {
+      final provider = _FakeProvider(const WeatherResult.success())
+        ..lookupResult = const CitySearchResult.failure(WeatherError(
+          WeatherErr.keyMissing,
+          '和风天气 API Key 未配置',
+          suggestion: '请在 App 设置页填入 QWeather API Key',
+        ));
+      final v =
+          await WeatherPort(provider).lookupCityByCoords(lat: 39.9, lng: 116.4);
+      expect(v.ok, isFalse);
+      expect(v.errorCode, WeatherErr.keyMissing);
+      expect(v.suggestion, contains('设置页'));
     });
   });
 }

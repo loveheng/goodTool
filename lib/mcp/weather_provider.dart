@@ -98,6 +98,42 @@ class WeatherResult {
   final bool isCached;
 }
 
+/// 城市搜索候选（GeoAPI lookup 投影；UI 搜索条与「添加城市」用）。
+class QCityOption {
+  const QCityOption({
+    required this.name,
+    required this.lat,
+    required this.lng,
+    this.locationId,
+  });
+
+  /// 和风完整行政链（如「北京市 朝阳区」，消重名歧义）。
+  final String name;
+
+  final double lat;
+  final double lng;
+
+  /// 和风 LocationID（如 `101010100`；留档用，取数按坐标直查）。
+  final String? locationId;
+}
+
+/// 城市搜索结果信封：**永不 null**（对齐 [WeatherResult] 反模式口径）。
+class CitySearchResult {
+  const CitySearchResult.success(this.options)
+      : success = true,
+        error = null;
+
+  const CitySearchResult.failure(this.error)
+      : success = false,
+        options = const <QCityOption>[];
+
+  final bool success;
+  final WeatherError? error;
+
+  /// 候选列表；「查无此城」为**成功但空列表**（非错误）。
+  final List<QCityOption> options;
+}
+
 /// 天气投影提供方抽象：内核（工具面）仅依赖本接口，不碰 `dart:io`。
 ///
 /// 具体实现 `QWeatherProvider`（HttpClient）落 `lib/service/weather.dart`。
@@ -112,6 +148,43 @@ abstract class WeatherProvider {
     double? lng,
     int days = 3,
   });
+
+  /// 城市名模糊搜索（GeoAPI `/geo/v2/city/lookup`，多候选）；**永不返回 null**。
+  /// 未配 Key/Host 时走 [CitySearchResult.failure] 结构化报错，不静默空列表。
+  Future<CitySearchResult> searchCity(String query);
+
+  /// 坐标反查城市（GeoAPI lookup `location=lng,lat`）；地图选点加城市用。
+  /// 与 [searchCity] 同信封同口径：「查无此城」= 成功空列表，失败带机器码。
+  Future<CitySearchResult> lookupCityByCoords({
+    required double lat,
+    required double lng,
+  });
+
+  /// 实时空气质量 AQI（`/v7/air/now`，投影进 [WeatherResult.now]）；永不 null。
+  Future<WeatherResult> air({String? city, double? lat, double? lng});
+
+  /// 生活指数（`/v7/indices/1d|3d`，投影进 [WeatherResult.forecast]）；永不 null。
+  /// [type] 数字或逗号分隔多值；缺省省略由和风默认。
+  Future<WeatherResult> indices({
+    String? city,
+    double? lat,
+    double? lng,
+    int days = 1,
+    String? type,
+  });
+
+  /// 日出日落（`/v7/astronomy/solar`，投影进 [WeatherResult.now]）；永不 null。
+  /// [date] `YYYY-MM-DD`，null = 设备今日。
+  Future<WeatherResult> astronomy({
+    String? city,
+    double? lat,
+    double? lng,
+    String? date,
+  });
+
+  /// 分钟级降水（`/v7/minutely/5m`，summary 投影进 [WeatherResult.now]、
+  /// 序列投影进 [WeatherResult.forecast]）；永不 null。
+  Future<WeatherResult> minutely({String? city, double? lat, double? lng});
 }
 
 /// 默认空实现：未注入真实源时返回 `ERR_WEATHER_KEY_MISSING` 信封（引导配置），
@@ -127,6 +200,58 @@ class NullWeatherProvider implements WeatherProvider {
     int days = 3,
   }) async =>
       const WeatherResult.failure(WeatherError(
+        WeatherErr.keyMissing,
+        '和风天气 API Key 未配置',
+        suggestion: '请在 App 设置页填入 QWeather API Key',
+      ));
+
+  @override
+  Future<CitySearchResult> searchCity(String query) async =>
+      const CitySearchResult.failure(WeatherError(
+        WeatherErr.keyMissing,
+        '和风天气 API Key 未配置',
+        suggestion: '请在 App 设置页填入 QWeather API Key',
+      ));
+
+  @override
+  Future<CitySearchResult> lookupCityByCoords({
+    required double lat,
+    required double lng,
+  }) async =>
+      const CitySearchResult.failure(WeatherError(
+        WeatherErr.keyMissing,
+        '和风天气 API Key 未配置',
+        suggestion: '请在 App 设置页填入 QWeather API Key',
+      ));
+
+  @override
+  Future<WeatherResult> air({String? city, double? lat, double? lng}) async =>
+      _keyMissing();
+
+  @override
+  Future<WeatherResult> indices({
+    String? city,
+    double? lat,
+    double? lng,
+    int days = 1,
+    String? type,
+  }) async =>
+      _keyMissing();
+
+  @override
+  Future<WeatherResult> astronomy({
+    String? city,
+    double? lat,
+    double? lng,
+    String? date,
+  }) async =>
+      _keyMissing();
+
+  @override
+  Future<WeatherResult> minutely({String? city, double? lat, double? lng}) =>
+      Future<WeatherResult>.value(_keyMissing());
+
+  static WeatherResult _keyMissing() => const WeatherResult.failure(WeatherError(
         WeatherErr.keyMissing,
         '和风天气 API Key 未配置',
         suggestion: '请在 App 设置页填入 QWeather API Key',

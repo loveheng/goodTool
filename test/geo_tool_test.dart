@@ -139,6 +139,14 @@ void main() {
     '/v3/geocode/geo': _geocodeResponse,
     '/v3/geocode/regeo': _regeoResponse,
     '/v3/place/text': _poiResponse,
+    '/v3/place/around': _poiResponse,
+    '/v3/ip': const <String, Object?>{
+      'status': '1',
+      'province': '北京市',
+      'city': '北京市',
+      'adcode': '110000',
+      'rectangle': '116.0,39.8;116.8,40.2',
+    },
   });
   final tool = buildGeoTool(
     _MockSensor(reading: _reading(), compassReading: const CompassReading(
@@ -154,7 +162,7 @@ void main() {
       _parse(await tool.call(action, params));
 
   group('能力矩阵 1:1 对账（product/geo.md）', () {
-    test('geo 分类恰好注册 8 个 action，名称与能力文档一致', () {
+    test('geo 分类恰好注册 9 个 action，名称与能力文档一致', () {
       final schema = tool.toSchema();
       final props =
           (schema['inputSchema'] as Map)['properties'] as Map;
@@ -166,11 +174,82 @@ void main() {
         'geo_current',
         'geo_distance',
         'geo_geocode',
+        'geo_ip_locate',
         'geo_reverse',
         'geo_route',
         'geo_search_poi',
         'geo_static_map',
       ]);
+    });
+  });
+
+  group('geo_ip_locate / geo_current IP 兜底（域深化）', () {
+    test('geo_ip_locate：rectangle 中心点 + 省/市/adcode + GCJ02', () async {
+      final j = await run('geo_ip_locate', {});
+      expect(j['success'], isTrue);
+      expect(j['lat'], closeTo(40.0, 1e-9));
+      expect(j['lng'], closeTo(116.4, 1e-9));
+      expect(j['coordSystem'], 'GCJ02');
+      expect(j['source'], 'ip');
+      expect(j['province'], '北京市');
+      expect(j['city'], '北京市');
+      expect(j['adcode'], '110000');
+    });
+
+    test('geo_ip_locate：缺 rectangle → AMAP_PARSE_ERROR（fail-closed）', () async {
+      final bad = _MockHttp({
+        '/v3/ip': const <String, Object?>{'status': '1'},
+      });
+      final t = buildGeoTool(_MockSensor(reading: null), bad);
+      final e = _errorOf(await t.call('geo_ip_locate', {}));
+      expect(e['code'], startsWith('geo.geo_ip_locate:'));
+      expect(e['code'], contains('AMAP_PARSE_ERROR'));
+    });
+
+    test('geo_current：GPS 失败 → IP 兜底（source=ip，缺省 GCJ02 不绕换算）', () async {
+      final t = buildGeoTool(_MockSensor(reading: null), http);
+      final j = _parse(await t.call('geo_current', {}));
+      expect(j['success'], isTrue);
+      expect(j['source'], 'ip');
+      expect(j['lat'], closeTo(40.0, 1e-9));
+      expect(j['coordSystem'], 'GCJ02');
+      expect(j.containsKey('accuracy'), isFalse);
+    });
+
+    test('geo_current：GPS 与 IP 兜底皆失败 → PERMISSION_DENIED', () async {
+      final t = buildGeoTool(
+          _MockSensor(reading: null),
+          _MockHttp(const {
+            '/v3/ip': {'status': '0', 'info': 'FAILED', 'infocode': '10000'},
+          }));
+      final e = _errorOf(await t.call('geo_current', {}));
+      expect(e['code'], startsWith('geo.geo_current:'));
+      expect(e['code'], contains('PERMISSION_DENIED'));
+      expect(e['message'], contains('IP 定位兜底'));
+    });
+
+    test('geo_current：GPS 正常时不出 IP 兜底（source=gps）', () async {
+      final before = http.calls.length;
+      final j = await run('geo_current', {});
+      expect(j['source'], 'gps');
+      expect(http.calls.length, before);
+    });
+
+    test('geo_search_poi：传 near 走 /v3/place/around（radius 生效）', () async {
+      final beforeAround = http.calls
+          .where((c) => c.path == '/v3/place/around')
+          .length;
+      await run('geo_search_poi', {
+        'keywords': '咖啡馆',
+        'near': {'lat': 39.9, 'lng': 116.4},
+        'radius': 1000,
+      });
+      final around = http.calls
+          .where((c) => c.path == '/v3/place/around')
+          .toList();
+      expect(around.length, greaterThan(beforeAround));
+      expect(around.last.query['radius'], '1000');
+      expect(around.last.query['location'], isNotNull);
     });
   });
 
@@ -195,7 +274,12 @@ void main() {
     });
 
     test('无定位权限 → PERMISSION_DENIED（带 geo.geo_current: 前缀）', () async {
-      final denied = buildGeoTool(_MockSensor(), http);
+      final denied = buildGeoTool(
+          _MockSensor(),
+          // 无 /v3/ip 桩：IP 兜底同败，收敛为 PERMISSION_DENIED。
+          _MockHttp(const {
+            '/v3/geocode/geo': _geocodeResponse,
+          }));
       final r = await denied.call('geo_current', {});
       expect(r.isError, isTrue);
       final err = _errorOf(r);

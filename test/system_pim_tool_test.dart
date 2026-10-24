@@ -1,4 +1,4 @@
-// P1e system_pim 适配层测试：14 action 与能力文档 1:1 对账、**W 档写门禁真验**
+// P1e system_pim 适配层测试：15 action 与能力文档 1:1 对账、**W 档写门禁真验**
 // （未授权 → PERMISSION_DENIED 且执行体未触达；登记后 → 走 CommandGateway 派发）、
 // 时间推演纯函数确定性、C1 区间红线、源缺位 fail-closed、订阅 URL 的 SSRF 护栏。
 import 'dart:convert';
@@ -30,7 +30,7 @@ void main() {
       );
 
   group('能力矩阵 1:1 对账（G1，防改名 / 自造）', () {
-    test('恰好 14 个 action，名称与 product/calendar.md 第一列一致', () {
+    test('恰好 15 个 action，名称与 product/calendar.md 第一列一致', () {
       final props =
           (tool().toSchema()['inputSchema'] as Map)['properties'] as Map;
       final enums = ((props['action'] as Map)['enum'] as List).cast<String>()
@@ -50,6 +50,7 @@ void main() {
         'calendar_tz_convert',
         'calendar_unsubscribe',
         'calendar_workdays_between',
+        'time_now',
       ]);
     });
 
@@ -347,6 +348,64 @@ void main() {
       expect(guardCalendarUrl('ftp://example.com/a').code, 'ERR_INVALID_URL');
     });
   });
+
+  group('time_now（当前时刻锚点）', () {
+    String utcToday() {
+      final n = DateTime.now().toUtc();
+      String p2(int v) => v.toString().padLeft(2, '0');
+      return '${n.year.toString().padLeft(4, '0')}-${p2(n.month)}-${p2(n.day)}';
+    }
+
+    test('缺省 UTC：now 带显式 offset + epochMs + weekday + 空表不编造节假日', () async {
+      final j = jsonOf(await tool().call('time_now', {}));
+      expect(j['success'], isTrue);
+      expect(j['timezone'], 'UTC');
+      expect(DateTime.tryParse(j['now']! as String), isNotNull);
+      expect(j['offset'], '+00:00');
+      expect(j['epochMs'], isA<int>());
+      expect(j['weekday'], matches(RegExp(r'^周[一二三四五六日]$')));
+      expect(j['date'], utcToday());
+      // 空表口径：isWorkday 仅按周末判定，无 holidayName 键（不编造放假）。
+      final now = DateTime.now().toUtc();
+      final expectedWorkday =
+          now.weekday != DateTime.saturday && now.weekday != DateTime.sunday;
+      expect(j['isWorkday'], expectedWorkday);
+      expect(j.containsKey('holidayName'), isFalse);
+      expect(j['holidayTableVersion'], 'empty-0');
+    });
+
+    test('时区入参：Asia/Shanghai 投影（offset 与 date 随时区）', () async {
+      final j = jsonOf(await tool().call('time_now', {'timezone': 'Asia/Shanghai'}));
+      expect(j['timezone'], 'Asia/Shanghai');
+      expect(j['offset'], '+08:00');
+      // 上海 UTC+8：UTC 日期与当地日期可能差一天，此处只断言格式与 offset 一致性。
+      expect(DateTime.tryParse(j['now']! as String), isNotNull);
+    });
+
+    test('holiday 表命中当日 → isWorkday=false + holidayName 回写', () async {
+      final today = utcToday();
+      final j = jsonOf(await tool(
+        holidays: _FixedHolidays({today: ('国庆节', 'holiday')}),
+      ).call('time_now', {}));
+      expect(j['date'], today);
+      expect(j['isWorkday'], isFalse);
+      expect(j['holidayName'], '国庆节');
+    });
+
+    test('调休补班日 → isWorkday=true + holidayName 带补班标注', () async {
+      final today = utcToday();
+      final j = jsonOf(await tool(
+        holidays: _FixedHolidays({today: ('国庆节', 'workday')}),
+      ).call('time_now', {}));
+      expect(j['isWorkday'], isTrue);
+      expect(j['holidayName'], '国庆节（调休补班）');
+    });
+
+    test('非法时区 → INVALID_ARGUMENT（不兜底 UTC）', () async {
+      final e = errOf(await tool().call('time_now', {'timezone': 'Mars/Olympus'}));
+      expect(e['code'], contains('INVALID_ARGUMENT'));
+    });
+  });
 }
 
 /// 可覆写的节假日表（验证 F3 注入与确定性）。
@@ -400,4 +459,29 @@ class _FakeFeeds implements CalendarFeedProvider {
 
   @override
   Future<int> refresh({String? feedId}) async => 0;
+
+}
+
+
+/// 固定节假日表（按日期键注入，time_now 工作日/节假日分支的确定性数据源）。
+class _FixedHolidays implements HolidayProvider {
+  _FixedHolidays(this._entries);
+
+  /// date → (name, type)。
+  final Map<String, (String, String)> _entries;
+
+  @override
+  String get version => 'test-1';
+
+  @override
+  List<HolidayEntry> between(String startDate, String endDate) {
+    final out = <HolidayEntry>[];
+    for (final e in _entries.entries) {
+      if (e.key.compareTo(startDate) >= 0 && e.key.compareTo(endDate) <= 0) {
+        out.add(HolidayEntry(
+            date: e.key, name: e.value.$1, type: e.value.$2));
+      }
+    }
+    return out;
+  }
 }

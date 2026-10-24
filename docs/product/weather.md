@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-10-23
+updated: 2026-10-24
 ---
 
 # goodTools · 天气能力（和风天气 API）
@@ -56,6 +56,18 @@ flowchart LR
 - `days`：`1`~`7`，默认 `3`；`≤3` 走 `/v7/weather/3d`，`>3` 走 `/v7/weather/7d`。
 - **缺省回退链**：`lat/lng` 与 `city` 皆为空时，按「缺省回退链（Fallback Chain）」逐级回退至 `weather_location` → `geo_current`，全部缺失才返回 `ERR_LOCATION_UNAVAILABLE`（不再跳过设置项）。
 - 与日历联动：Agent 执行「本周日程 + 出行建议」时通常 `days=7`，结合日历事件、预警与降水判断。
+
+### `weather_air` / `weather_indices` / `weather_astronomy` / `weather_minutely`（域深化四件，2026-10-24 起）
+
+| action | 档 | 入参 | 出参 | 职责 |
+|---|---|---|---|---|
+| `weather_air` | R | `{city?, lat?, lng?}` | `{success, city?, updateTime?, air?: {aqi, category, primary?, pm10?, pm2p5?, no2?, so2?, co?, o3?}, isCached}` | 实时空气质量 AQI（`/v7/air/now`） |
+| `weather_indices` | R | `{city?, lat?, lng?, days?: int(1\|3), type?: string}` | `{success, city?, updateTime?, indices: [{date, type, name, level, category, text}], isCached}` | 生活指数（`/v7/indices/1d\|3d`；`type` 为数字或逗号分隔多值，缺省省略由和风默认） |
+| `weather_astronomy` | R | `{city?, lat?, lng?, date?: "YYYY-MM-DD"}` | `{success, city?, updateTime?, solar?: {sunrise, sunset, ...}, isCached}` | 日出日落（`/v7/astronomy/solar`；`date` 缺省设备今日） |
+| `weather_minutely` | R | `{city?, lat?, lng?}` | `{success, city?, updateTime?, summary?, minutely: [{fxTime, precip}], isCached}` | 分钟级降水未来 2h 序列与文案总结（`/v7/minutely/5m`） |
+
+- 四者共用 `weather_forecast` 的位置解析回退链、传输层硬性约束、配额护栏（singleflight/串行节流/429 冷却）与 TTL 缓存——**独立键位**（`air:`/`idx:`/`solar:`/`min:` 前缀），不与预报缓存互相命中；缓存回放同样标 `isCached`。
+- 端点不在账号权限/配额内时按同一错误模型返回结构化失败（fail-closed，不静默空）。
 
 ### 缺省回退链（Fallback Chain）
 
@@ -174,6 +186,11 @@ flowchart LR
 - **天气数据 TTL 缓存**：以 `locationId + 日期 + days` 为 Key，内存 + 持久化短时缓存，**默认 TTL 30 分钟**（可配 30min~1h）。`now` 与 `forecast` 视为同一缓存生命周期（同一次 `Future.wait` 的结果一并写入）。
 - **命中即返回**：未过期直接回放缓存，并在出参打 `isCached: true`，不发起新请求。
 - **频控自愈**：遇 429（HTTP 层或 Body `code:"429"`）时，若有未过期缓存则**自动回退最新缓存并标 `isCached: true`**（带降级日志 `[DEGRADE]`），否则返回 `ERR_RATE_LIMITED` 结构化错误，杜绝 Agent 幻觉。
+- **配额护栏三件套**（provider 出网侧；Agent 并发调用与 UI 逐城聚合叠加时防风暴）：
+  1. **并发合并（singleflight）**：同 `location#days` 的并发 `forecast` 共享同一次在途取数，不重复出网；
+  2. **串行节流（pacing）**：不同 key 的取数经串行队列先到先服务，相邻起跑间隔默认 300ms（≈3 QPS 上限，留足开发版余量；注入口可关）；
+  3. **429 冷却窗（cooldown）**：命中频控后默认 60s 内不再出网——有缓存（含过期）回放并标 `isCached`，无缓存返 `ERR_RATE_LIMITED` 并带冷却恢复指引；冷却截止由注入时钟驱动（可测）。
+  - 三者均只作用于 `forecast` 出网路径；`searchCity`/`lookupCityByCoords`（用户手动触发、低频）不受冷却拦截。
 - 缓存仅存天气投影，不含任何用户身份敏感字段。
 
 ## 错误模型（结构化自愈，杜绝静默 `null`）
@@ -219,6 +236,15 @@ flowchart LR
 - **并发聚合与部分降级**：`now` 与 `forecast` 用 `Future.wait([_fetchNow(), _fetchForecast()])` 并发拉取、共享缓存生命周期、均带 `unit=m`。**不返回残缺响应**：任一路失败先**重试一次**，仍失败转**缓存回退**（标 `isCached:true`），再失败才返回结构化 `ERR_*`（主响应以 `forecast` 为准，不单独吐半截 `now`）。**`alerts` 为弱依赖（Non-fatal）**：其请求失败（网络/404/500）仅记 `[DEGRADE]` 并置 `[]`，不阻断主数据，也不计入主响应重试/错误路径。
 - **城市代码映射缓存**与**天气 TTL 缓存**的内核抽象（纯 Dart，可 Mock）定义在 `WeatherProvider` 侧或在 service 层注入一个 `CachePort`，避免内核沾 `dart:io`。
 
+## 用户侧城市管理（多城市列表，2026-10-24 起）
+
+- **定位**：城市增删是**用户本人自决**的写，命令族 `user_weather_city_add/delete` 只登记网关**用户侧注册表**（AI 不可触达，不进 MCP 工具面）；AI 查天气仍走 `weather_forecast` 单 action,默认城市语义不变（显式入参 > `weather_location` > 设备定位）。
+- **存储**：`weather_cities` 键（SharedPreferences JSON 数组），条目 = `{id, name, lat, lng, locationId?}`；上限 10 条（配额护栏，开发版和风频控低）、重名（trim 后全等）拒绝不覆盖。
+- **取数路径**：城市条目存**坐标**，UI 查天气按坐标直取（`/v7/weather/now` + daily），**不经 GeoAPI 城市解析**——城市解析只在「添加城市」时发生一次（搜索走 `WeatherProvider.searchCity` 多候选；地图选点走 `lookupCityByCoords` 坐标反查；均为 `/geo/v2/city/lookup` 类型化信封，「查无此城」= 成功空列表非错误）。
+- **地图选点协同**：地图页「天气」分段激活选点模式 → 点地图落点（GCJ-02 原样透传）→ 坐标反查出候选（和风行政链名 + 城市质心坐标 + LocationID）→ 点「添加」经 `user_weather_city_add` 入列。条目与搜索添加**同源同构**（同名重名校验语义一致，取数同走坐标直查），AI 不可触达不变。
+- **列表逐城摘要**：城市列表行内聚合各城实时摘要（temp/text + `isCached` 标记），与「点城市取数」**共用 provider 逐城 TTL 缓存**（同一 `location#days` 键）——摘要先行预热，命中零出网；未命中逐城串行补数（开发版配额护栏，避免并发取数触发频控）；失败行内给人话提示，点行看结构化详情。
+- **UI 范式**：天气页 = 已添加城市列表 + 底部胶囊搜索条 + `DraggableScrollableSheet` 半/全屏面板（snap 档位/把手/搜索框快甩手势对齐地图页 `geo_page` 同款）；依赖门（缺 Key/Host）在搜索与取数两处均出「去设置」引导卡。
+
 ## 隐私
 
 - `weather_location` 为用户自设低敏项；脱敏策略不涉及本能力。
@@ -232,3 +258,8 @@ flowchart LR
 - KV 持久化端口：`lib/mcp/settings_kv.dart`
 - 工具面注册端口：`lib/mcp/tool_face.dart`
 - 架构红线口径：仓库根 `AGENTS.md`
+
+## 决策日志
+- [2026-10-20] [决策]: 本轮**不装配**进 `tool_face_assembly.dart`——真实源（QWeatherProvider）未就绪时装配会让线级多一个恒返 `ERR_WEATHER_KEY_MISSING` 的空工具，属「能力假上线」；待 S5c 落地后随 S5d 一并装配。
+- [2026-10-20] [决策]: 行政链**相邻重复段折叠**——和风在直辖市会把 adm1/adm2 都填「北京市」，直接按文档 `${adm1} ${adm2} ${name}` 拼接会得到「北京市 北京市 朝阳区」，与文档出参示例「北京市 朝阳区」不符。
+- [2026-10-23] [决策]: **不接和风 SDK**（用户提示「和风天气有 sdk 可以使用」→ 评估后否决）：① pub.dev 无官方 Flutter SDK 包（仅社区插件 `flutter_qweather` 0.0.11，老且为原生插件，引入会破坏无头架构与 arch-guard 分层）；② 官方 SDK（Android/iOS/小程序）初始化同样是 `API Key + API Host`，**不消除「必须账号专属 Host」这一根因**；③ 本仓自研 provider 已覆盖端口契约 + 19 项真实链路单测，换 SDK 收益不抵迁移代价。结论：保留自研实现并加固。

@@ -6,14 +6,17 @@
 // **只 buildCommand**，鉴权与派发由 `CategoryTool` 网关层统一执行——G3 / arch-guard R7）
 // + 9 个 R 档。
 //
-// **落地进度（P2 完毕）**：14 个 action 中 13 个真实可用——
+// **落地进度（P2 完毕，14/14 全真实可用）**：
 // - 纯函数 3 档（date_calc / date_diff / workdays_between）+ 农历 2 档
 //   （resolve_date / month_grid / marker_list 的农历分支，P2-③ package:lunar）
 //   + 时区 1 档（tz_convert，P2-② package:timezone，B3/B4/B5）；
 // - ICS 3 档（query / feeds / refresh）经 `CalendarFeedProvider` 注入；
 // - 标记 2 档经 `CalendarMarkerStore` 注入；缺源时按 standards §1.2
-//   **fail-closed** 返 `ERR_CALENDAR_SOURCE_UNAVAILABLE`（不假上线）。
-// 唯一缺口：`calendar_query` 的 `source: system`（P2-⑦ 平台通道，等排期）。
+//   **fail-closed** 返 `ERR_CALENDAR_SOURCE_UNAVAILABLE`（不假上线）；
+// - `calendar_query` 的 `source: system`（P2-⑦）经 CompositeCalendarProvider
+//   双路合并落地：Kotlin `SystemCalendarChannel`（双引擎注册）+
+//   `MethodChannelSystemCalendarPort`；READ_CALENDAR 缺权降级为 warnings
+//   （`ERR_CALENDAR_PERMISSION`），授权入口在日历页（U12b）。
 library;
 
 import 'dart:convert';
@@ -70,6 +73,7 @@ CategoryTool buildSystemPimTool(
   cat.register(_CalendarResolveDateSub(holidays));
   cat.register(_CalendarMarkerListSub(markers, holidays));
   cat.register(_CalendarTzConvertSub(deviceTz));
+  cat.register(_TimeNowSub(holidays, deviceTz));
   // W 档 · 只构造命令
   cat.register(_CalendarSubscribeSub());
   cat.register(_CalendarUnsubscribeSub());
@@ -622,6 +626,70 @@ class _CalendarTzConvertSub extends SubAction {
       'success': true,
       'fromTimezone': fromName,
       ...out,
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// time_now：当前时刻锚点（设备时间 + 时区 + 工作日/节假日上下文）
+// ---------------------------------------------------------------------------
+
+/// time_now（R 档）：Agent 无时钟——一切「今天 / 现在」类判断必须先取本时刻，
+/// 严禁用训练数据里的日期推算（防编造）。与 tz_convert 共用 B1 基准链与
+/// holidayTableVersion 口径；工作日判定 = DateMath.isWorkday（调休补班 > 法定
+/// 节假日 > 周末），空表时仅跳过周末（不编造放假判断）。
+class _TimeNowSub extends SubAction {
+  _TimeNowSub(this._holidays, this._deviceTz);
+
+  final HolidayProvider _holidays;
+  final DeviceTimezoneProvider _deviceTz;
+
+  @override
+  String get name => 'time_now';
+
+  @override
+  String get description =>
+      '获取当前时刻锚点：设备现时在指定时区的投影（ISO 8601 带显式 offset）、'
+      'epoch 毫秒、当天日期与星期、是否工作日及节假日/调休名。'
+      '任何涉及「今天 / 现在 / 还剩几天」的计算都应先调用本动作取当前时刻，'
+      '不要用你自己记忆中的日期推算（会编造）。timezone 缺省为设备时区（缺省 UTC）。';
+
+  @override
+  String get paramSignature => 'time_now(timezone?: string) [全可选]';
+
+  @override
+  Future<SubActionResult> execute(Map<String, Object?> params) async {
+    final tzName = _optStr(params['timezone']) ?? _deviceTz.timezone;
+    final tz.Location loc;
+    try {
+      loc = TzMath.resolveLocation(tzName);
+    } on TzMathException catch (e) {
+      return _err('INVALID_ARGUMENT', e.message,
+          suggestion: 'IANA 时区名如 Asia/Shanghai、America/New_York、UTC');
+    }
+    final now = tz.TZDateTime.now(loc);
+    final date = DateMath.fmt(now);
+    final isWorkday = DateMath.isWorkday(now, _holidays);
+    // 节假日/调休名：仅当表内有当日条目时回写（空表 = 只有周末口径，不编造）。
+    String? holidayName;
+    for (final e in _holidays.between(date, date)) {
+      if (e.date != date) continue;
+      holidayName = e.type == 'workday' ? '${e.name}（调休补班）' : e.name;
+    }
+    return _jsonSuccess(<String, Object?>{
+      'success': true,
+      'now': TzMath.fmtIso(now),
+      'epochMs': now.millisecondsSinceEpoch,
+      'timezone': loc.name,
+      'offset': TzMath.fmtOffset(now.timeZoneOffset),
+      'dstActive': loc.timeZone(now.millisecondsSinceEpoch).isDst,
+      'date': date,
+      'time':
+          '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}',
+      'weekday': '周${'一二三四五六日'[now.weekday - 1]}',
+      'isWorkday': isWorkday,
+      'holidayName': ?holidayName,
+      'holidayTableVersion': _holidays.version,
     });
   }
 }

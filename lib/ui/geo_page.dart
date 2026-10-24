@@ -9,6 +9,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../action/command_gateway.dart';
 import '../action/geo_commands.dart';
+import '../action/weather_commands.dart';
 import '../geo/coord_convert.dart';
 import '../geo/route_guidance.dart';
 import '../mcp/geo_provider.dart';
@@ -18,14 +19,15 @@ import '../repository/favorite_repository.dart';
 import '../ui_ports/geo_lbs_port.dart' hide LatLng;
 import '../ui_ports/geo_last_location_port.dart';
 import '../ui_ports/geo_port.dart';
+import '../ui_ports/weather_port.dart';
 import 'components/app_components.dart';
 import 'tokens/app_tokens.dart';
 
 /// 地图子页面：交互地图画布（FlutterMap + 高德 XYZ 瓦片源）+ 功能面板
-/// （搜索选点 / 四模态路线 / 测距 / 收藏 marker）+ 坐标纠偏（三系同屏）。
+/// （搜索选点 / 四模态路线 / 测距 / 收藏 marker / 选点加天气城市）+ 坐标纠偏（三系同屏）。
 ///
 /// 人机同源：LBS 能力经 [GeoLbsPort] 与 MCP 工具面并列共享同一内核与
-/// `GeoHttpProvider`；收藏写经 CommandGateway 用户侧注册表（R1）。
+/// `GeoHttpProvider`；收藏与天气城市写经 CommandGateway 用户侧注册表（R1）。
 /// 画布零原生依赖：纯 Dart 渲染（decisions.md 2026-10-22 结构性替换）。
 class GeoPage extends StatefulWidget {
   const GeoPage({
@@ -35,6 +37,7 @@ class GeoPage extends StatefulWidget {
     required this.gateway,
     required this.locationSensor,
     required this.lastLocation,
+    required this.weatherPort,
   });
 
   final GeoLbsPort lbsPort;
@@ -47,6 +50,9 @@ class GeoPage extends StatefulWidget {
 
   final FavoriteRepository favorites;
   final CommandGateway gateway;
+
+  /// 天气端口（地图选点 → 坐标反查城市，与天气页共享同一 WeatherProvider 实例）。
+  final WeatherPort weatherPort;
 
   @override
   State<GeoPage> createState() => _GeoPageState();
@@ -113,7 +119,7 @@ class _GeoPageState extends State<GeoPage> {
   _PickedPlace? _origin;
   _PickedPlace? _destination;
 
-  /// 地图点击用途：设起点 / 设终点 / 测距打点。
+  /// 地图点击用途：设起点 / 设终点 / 测距打点 / 选天气城市点。
   _PickMode _pickMode = _PickMode.none;
   final List<LatLng> _measurePoints = <LatLng>[];
   GeoView? _measureView;
@@ -121,11 +127,27 @@ class _GeoPageState extends State<GeoPage> {
   /// 面板当前功能分段（一次只展示一个功能的完整面）。
   _GeoPanelTab _panelTab = _GeoPanelTab.route;
 
+  // ---- 天气协同（地图选点 → 坐标反查城市 → 用户侧命令入列） ----
+  /// 选中的天气城市点（GCJ-02，与画布/瓦片同系；和风按坐标直查可识别 GCJ-02）。
+  LatLng? _wxPick;
+
+  /// 坐标反查结果（候选 = 和风行政链，添加条目与搜索流同源同构）。
+  CitySearchView? _wxLookup;
+  bool _wxLooking = false;
+  bool _wxAdding = false;
+
+  /// 添加结果反馈（面板内展示：成功确认 / 失败原因，不用 SnackBar 糊面板）。
+  String? _wxAdded;
+  String? _wxError;
+
   // ---- 搜索与路线 ----
   GeoSearchView? _searchView;
   bool _searching = false;
   RouteView? _routeView;
   bool _routing = false;
+
+  /// 最近一次选择的路线模态——「公交城市」输入框仅在公交模态显示。
+  bool _transitMode = false;
 
   @override
   void initState() {
@@ -232,8 +254,10 @@ class _GeoPageState extends State<GeoPage> {
             name: '地图选点', lat: point.latitude, lng: point.longitude));
         _pickMode = _PickMode.none;
       case _PickMode.measure:
+        // 已打满 2 点：忽略后续点击（想重测走面板「清除打点」）——
+        // 静默清空重来会让用户的前两点凭空消失、不知所措。
+        if (_measurePoints.length >= 2) return;
         setState(() {
-          if (_measurePoints.length >= 2) _measurePoints.clear();
           _measurePoints.add(point);
           _measureView = _measurePoints.length == 2
               ? _port.distance(
@@ -248,9 +272,62 @@ class _GeoPageState extends State<GeoPage> {
         if (_measurePoints.length == 2) {
           _fitTo(List<LatLng>.of(_measurePoints));
         }
+      case _PickMode.weather:
+        _lookupWeatherCity(point);
+        _pickMode = _PickMode.none;
       case _PickMode.none:
         break;
     }
+  }
+
+  /// 地图选点 → 坐标反查城市（和风 GeoAPI）→ 面板展示候选。
+  ///
+  /// 点位落 Marker（地图必有可见反馈，同起点/终点选点口径）；反查完成后面板
+  /// 抬到中档展示候选——对齐搜索结果流的自动抬升范式。
+  Future<void> _lookupWeatherCity(LatLng point) async {
+    setState(() {
+      _wxPick = point;
+      _wxLookup = null;
+      _wxAdded = null;
+      _wxError = null;
+      _wxLooking = true;
+    });
+    _fitTo(<LatLng>[point]);
+    final r = await widget.weatherPort
+        .lookupCityByCoords(lat: point.latitude, lng: point.longitude);
+    if (!mounted) return;
+    setState(() {
+      _wxLookup = r;
+      _wxLooking = false;
+    });
+    _sheetController.animateTo(0.6,
+        duration: const Duration(milliseconds: 240), curve: Curves.easeOut);
+  }
+
+  /// 反查候选 → 用户侧命令入天气城市列表（R1：UI 只组装命令，写经网关）。
+  ///
+  /// 条目用**候选回传的坐标与 LocationID**（和风城市质心），与搜索添加的城市
+  /// 同源同构——同名城市重名校验语义一致，取数也走同一坐标直查路径。
+  Future<void> _addWeatherCity(WeatherCityOptionView option) async {
+    setState(() => _wxAdding = true);
+    final result = await widget.gateway
+        .dispatchUser(UserWeatherCityAddCommand(<String, Object?>{
+      'name': option.name,
+      'lat': option.lat,
+      'lng': option.lng,
+      if (option.locationId != null) 'locationId': option.locationId,
+    }));
+    if (!mounted) return;
+    setState(() {
+      _wxAdding = false;
+      if (result.ok) {
+        _wxAdded = '已加入天气列表：${option.name}';
+        _wxError = null;
+      } else {
+        _wxAdded = null;
+        _wxError = '添加失败：${result.message ?? result.errorCode}';
+      }
+    });
   }
 
   /// 设起点：落 Marker 并 fit 到该点——选点后地图必有可见反馈
@@ -390,6 +467,7 @@ class _GeoPageState extends State<GeoPage> {
     setState(() => _favBusy = false);
     if (result.ok) {
       // 清名称/坐标，**保留收藏夹**——连续录入同一夹是常见操作。
+      setState(() => _favError = null);
       _favName.clear();
       _favLat.clear();
       _favLng.clear();
@@ -541,6 +619,7 @@ class _GeoPageState extends State<GeoPage> {
       _PickMode.origin => '点击地图设起点',
       _PickMode.destination => '点击地图设终点',
       _PickMode.measure => '点击地图打点测距',
+      _PickMode.weather => '点击地图选天气城市',
       _PickMode.none => '地图',
     };
     // 定位中 / 定位失败提示优先于选点提示（用户在等反馈）。
@@ -553,7 +632,7 @@ class _GeoPageState extends State<GeoPage> {
       label = _locHint!;
       icon = Icons.location_disabled;
     } else if (_pickMode != _PickMode.none) {
-      label = pickLabel;
+      label = '$pickLabel（点此取消）';
       icon = Icons.touch_app_outlined;
     } else {
       label = pickLabel;
@@ -566,7 +645,12 @@ class _GeoPageState extends State<GeoPage> {
       right: t.metrics.space16,
       child: Center(
         // 毛玻璃：模糊地图底 + 半透明面（比纯半透明更有层次）。
-        child: ClipRRect(
+        // 选点模式激活时胶囊可点取消——面板已自动收起，胶囊是唯一常驻的退出入口。
+        child: GestureDetector(
+          onTap: _pickMode == _PickMode.none
+              ? null
+              : () => setState(() => _pickMode = _PickMode.none),
+          child: ClipRRect(
           borderRadius: BorderRadius.circular(20),
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
@@ -590,6 +674,7 @@ class _GeoPageState extends State<GeoPage> {
               ),
             ),
           ),
+        ),
         ),
       ),
     );
@@ -867,6 +952,7 @@ class _GeoPageState extends State<GeoPage> {
       (_GeoPanelTab.route, '路线', Icons.directions),
       (_GeoPanelTab.favorite, '收藏', Icons.star_border),
       (_GeoPanelTab.measure, '测距', Icons.straighten),
+      (_GeoPanelTab.weather, '天气', Icons.thermostat),
       (_GeoPanelTab.convert, '纠偏', Icons.swap_horiz),
     ];
     return SingleChildScrollView(
@@ -894,6 +980,7 @@ class _GeoPageState extends State<GeoPage> {
         _GeoPanelTab.route => _buildRouteTab(t),
         _GeoPanelTab.favorite => _buildFavoritesSection(t),
         _GeoPanelTab.measure => _buildMeasureTab(t),
+        _GeoPanelTab.weather => _buildWeatherTab(t),
         _GeoPanelTab.convert => _buildConvertSection(t),
       };
 
@@ -964,6 +1051,9 @@ class _GeoPageState extends State<GeoPage> {
           SizedBox(height: t.metrics.space8),
           if (_measurePoints.length < 2)
             Text('激活后点击地图打点（面板自动收起让位地图）',
+                style: t.typeScale.compact)
+          else
+            Text('已打满 2 点；重新开始请点「清除打点」',
                 style: t.typeScale.compact),
           if (_measureView != null) ...<Widget>[
             if (_measureView!.ok)
@@ -984,6 +1074,91 @@ class _GeoPageState extends State<GeoPage> {
             ),
         ],
       );
+
+  /// 天气分段：地图选点 → 坐标反查城市 → 加入天气列表（与天气页城市列表同库，
+  /// 写入走 `user_weather_city_add` 用户侧命令，AI 不可触达）。
+  Widget _buildWeatherTab(AppTokens t) {
+    final pick = _wxPick;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Wrap(
+          spacing: t.metrics.space8,
+          runSpacing: t.metrics.space8,
+          children: <Widget>[
+            _pickChip(t, '选点加城市', _PickMode.weather,
+                pick == null ? null : '已选点'),
+          ],
+        ),
+        SizedBox(height: t.metrics.space8),
+        if (pick == null)
+          Text('激活后点击地图任一点，自动反查所在行政区加入天气列表',
+              style: t.typeScale.compact)
+        else ...<Widget>[
+          // 选点坐标（GCJ-02，遥测轨；和风可自动识别 GCJ-02 无需偏移）。
+          TelemetryText(
+              '${pick.latitude.toStringAsFixed(4)}, ${pick.longitude.toStringAsFixed(4)}'),
+          if (_wxLooking)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: LinearProgressIndicator(),
+            )
+          else if (_wxLookup != null) ...<Widget>[
+            SizedBox(height: t.metrics.space8),
+            _buildWxLookupResult(t),
+          ],
+        ],
+        if (_wxAdded != null) ...<Widget>[
+          SizedBox(height: t.metrics.space8),
+          Row(
+            children: <Widget>[
+              Icon(Icons.check_circle, size: 14, color: t.palette.l2Accent),
+              SizedBox(width: t.metrics.space4),
+              Expanded(child: Text(_wxAdded!, style: t.typeScale.compact)),
+            ],
+          ),
+        ],
+        if (_wxError != null) ...<Widget>[
+          SizedBox(height: t.metrics.space8),
+          ErrorLine(message: _wxError!),
+        ],
+      ],
+    );
+  }
+
+  /// 反查结果：失败带码带指引；空列表（海域/无人区）给换点指引；候选点「添加」入列。
+  Widget _buildWxLookupResult(AppTokens t) {
+    final r = _wxLookup!;
+    if (!r.ok) {
+      return ErrorLine(
+          code: r.errorCode, message: r.message, suggestion: r.suggestion);
+    }
+    if (r.options.isEmpty) {
+      return Text('该坐标无匹配城市（海域或无人区），换个点试试',
+          style: t.typeScale.compact);
+    }
+    return Column(
+      children: <Widget>[
+        for (final option in r.options)
+          ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.thermostat, size: 20),
+            title: Text(option.name, style: t.typeScale.compact),
+            trailing: _wxAdding
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : TextButton(
+                    onPressed: () => _addWeatherCity(option),
+                    child: const Text('添加'),
+                  ),
+            onTap: _wxAdding ? null : () => _addWeatherCity(option),
+          ),
+      ],
+    );
+  }
 
   /// 搜索框（常驻面板顶部；上滑面板展开后仍可见）。
   ///
@@ -1063,13 +1238,28 @@ class _GeoPageState extends State<GeoPage> {
             title: Text(p.name, style: t.typeScale.body),
             subtitle: Text(p.district ?? p.address ?? p.formatted,
                 style: t.typeScale.compact),
-            trailing: TextButton(
-              onPressed: () => _applyDestination(
-                  _PickedPlace(name: p.name, lat: p.lat, lng: p.lng)),
-              child: const Text('设终点'),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                TextButton(
+                  onPressed: () => _applyOrigin(
+                      _PickedPlace(name: p.name, lat: p.lat, lng: p.lng)),
+                  child: const Text('设起点'),
+                ),
+                TextButton(
+                  onPressed: () => _applyDestination(
+                      _PickedPlace(name: p.name, lat: p.lat, lng: p.lng)),
+                  child: const Text('设终点'),
+                ),
+              ],
             ),
-            onTap: () =>
-                _applyOrigin(_PickedPlace(name: p.name, lat: p.lat, lng: p.lng)),
+          ),
+        if (v.places.length > 10)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text('仅显示前 10 条结果（共 ${v.places.length} 条）',
+                style:
+                    t.typeScale.micro.copyWith(color: t.palette.textMuted)),
           ),
       ],
     );
@@ -1105,15 +1295,11 @@ class _GeoPageState extends State<GeoPage> {
         width: 46,
         height: 46,
         alignment: Alignment.topCenter,
-        child: GestureDetector(
-          onTap: () => _applyDestination(
-              _PickedPlace(favId: p.id, name: p.name, lat: p.lat, lng: p.lng)),
-          child: _pin(
+        child: _pin(
             color: accent,
             tip: p.folder.isEmpty ? p.name : '${p.folder} · ${p.name}',
             icon: Icon(Icons.star, color: accent, size: 17),
           ),
-        ),
       ));
     }
     final o = _origin;
@@ -1157,6 +1343,22 @@ class _GeoPageState extends State<GeoPage> {
             height: 10,
             decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
           ),
+        ),
+      ));
+    }
+    // 天气城市选点（橙温度计：与收藏/起终点/测距点视觉区分）。
+    final wx = _wxPick;
+    if (wx != null) {
+      markers.add(Marker(
+        point: wx,
+        width: 46,
+        height: 46,
+        alignment: Alignment.topCenter,
+        child: _pin(
+          color: Colors.orange.shade700,
+          tip: '天气城市点',
+          icon:
+              Icon(Icons.thermostat, color: Colors.orange.shade700, size: 17),
         ),
       ));
     }
@@ -1277,7 +1479,7 @@ class _GeoPageState extends State<GeoPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             if (_routeFormError != null) ...<Widget>[
-              ErrorLine(code: 'MISSING_ARGUMENT', message: _routeFormError!),
+              ErrorLine(message: _routeFormError!),
               SizedBox(height: t.metrics.space8),
             ],
             Text('起点/终点来自收藏点、搜索结果或地图选点（工具条）',
@@ -1294,17 +1496,24 @@ class _GeoPageState extends State<GeoPage> {
                   ('transit', '🚌 公交'),
                 ])
                   OutlinedButton(
-                    onPressed: _routing ? null : () => _runRoute(m.$1),
+                    onPressed: _routing
+                        ? null
+                        : () {
+                            setState(() => _transitMode = m.$1 == 'transit');
+                            _runRoute(m.$1);
+                          },
                     child: Text(m.$2),
                   ),
               ],
             ),
-            // 公交规划高德强制城市（CITY_REQUIRED 前置校验在端口）。
-            TextField(
-              controller: _transitCityCtrl,
-              decoration: const InputDecoration(
-                  labelText: '公交城市（选公交时必填）', isDense: true),
-            ),
+            // 公交规划高德强制城市（CITY_REQUIRED 前置校验在端口）；
+            // 仅公交模态显示，其余模态不占版面。
+            if (_transitMode)
+              TextField(
+                controller: _transitCityCtrl,
+                decoration: const InputDecoration(
+                    labelText: '公交城市（选公交时必填）', isDense: true),
+              ),
             if (_routing) const Padding(padding: EdgeInsets.only(top: 8), child: LinearProgressIndicator()),
             if (_routeView != null) ...<Widget>[
               SizedBox(height: t.metrics.space8),
@@ -1335,6 +1544,13 @@ class _GeoPageState extends State<GeoPage> {
       children: <Widget>[
         for (var i = 0; i < shown.length; i++)
           _buildRouteStepTile(t, i, shown[i], shown.length),
+        if (steps.length > shown.length)
+          Padding(
+            padding: EdgeInsets.only(top: t.metrics.space4),
+            child: Text('仅显示前 ${shown.length} 步（共 ${steps.length} 步）',
+                style:
+                    t.typeScale.micro.copyWith(color: t.palette.textMuted)),
+          ),
       ],
     );
   }
@@ -1429,7 +1645,7 @@ class _GeoPageState extends State<GeoPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             if (_favError != null) ...<Widget>[
-              ErrorLine(code: 'FAVORITE_WRITE_FAILED', message: _favError!),
+              ErrorLine(message: _favError!),
               SizedBox(height: t.metrics.space8),
             ],
             if (_favorites.isEmpty)
@@ -1486,8 +1702,6 @@ class _GeoPageState extends State<GeoPage> {
                         ),
                       ],
                     ),
-                    onTap: () => _applyDestination(_PickedPlace(
-                        favId: p.id, name: p.name, lat: p.lat, lng: p.lng)),
                   ),
               ],
             SizedBox(height: t.metrics.space8),
@@ -1537,6 +1751,33 @@ class _GeoPageState extends State<GeoPage> {
                   ),
                 ),
               ],
+            ),
+            SizedBox(height: t.metrics.space8),
+            // 坐标快捷填入：普通用户手里没有 GCJ-02 坐标，定位一键落表。
+            ActionChip(
+              avatar: _locating
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.my_location, size: 18),
+              label: const Text('填入当前位置'),
+              onPressed: _locating
+                  ? null
+                  : () async {
+                      setState(() => _locating = true);
+                      final place = await _currentPlace();
+                      if (!mounted) return;
+                      setState(() => _locating = false);
+                      if (place == null) {
+                        setState(() => _favError =
+                            '无法获取当前位置（检查定位权限与系统定位开关）');
+                        return;
+                      }
+                      _favLat.text = place.lat.toStringAsFixed(6);
+                      _favLng.text = place.lng.toStringAsFixed(6);
+                    },
             ),
             SizedBox(height: t.metrics.space8),
             FilledButton.icon(
@@ -1604,11 +1845,11 @@ class _GeoPageState extends State<GeoPage> {
       );
 }
 
-/// 起点/终点/测距点的地图选点模式。
-enum _PickMode { none, origin, destination, measure }
+/// 起点/终点/测距点/天气城市点的地图选点模式。
+enum _PickMode { none, origin, destination, measure, weather }
 
 /// 面板功能分段（按钮切换，一次展示一个功能的完整面）。
-enum _GeoPanelTab { search, route, favorite, measure, convert }
+enum _GeoPanelTab { search, route, favorite, measure, convert, weather }
 
 /// 「我的位置」蓝点：白边实心点 + 呼吸光圈（原生地图小蓝点观感）。
 class _MyLocationDot extends StatefulWidget {

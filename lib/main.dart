@@ -38,6 +38,9 @@ import 'service/settings_actors.dart';
 import 'service/system_calendar_port.dart';
 import 'service/system_location_sensor.dart';
 import 'service/weather.dart';
+import 'service/weather_city_store.dart';
+import 'service/weather_city_actors.dart';
+import 'repository/weather_city_repository.dart';
 import 'tool_face_assembly.dart';
 import 'ui/calculator_page.dart';
 import 'ui/calendar_page.dart';
@@ -132,6 +135,8 @@ class _BootPageState extends State<_BootPage> {
     mark('MarkerStore.open');
     final favoriteStore = await SharedPrefsFavoritePlaceStore.open();
     mark('FavoritePlaceStore.open');
+    final weatherCityStore = await SharedPrefsWeatherCityStore.open();
+    mark('WeatherCityStore.open');
 
     // ② 日历合并源：ICS 订阅 + 系统日历（UI 与工具面**共用同一实例**）；
     // 脱敏开关态经 KV 注入合并源（U12a）——两路（ICS/系统）同开关语义。
@@ -158,6 +163,11 @@ class _BootPageState extends State<_BootPage> {
     ).register(gateway);
     // 地图页「上次定位点」用户侧 Actor（AI 不可触达）：同上纪律。
     GeoLastLocationActor(kv: kv).register(gateway);
+    // 天气多城市用户侧 Actor（AI 不可触达）：写端口只在此登记链持有。
+    WeatherCityActors(
+      store: weatherCityStore,
+      writer: weatherCityStore,
+    ).register(gateway);
 
     // ④ 工具面：与 Binder 生产通道共用同一装配（standards §3.3 S7 纪律）。
     // 天气源与工具面**共用同一 QWeatherProvider 实例**——否则 UI 与 Agent 各拉
@@ -210,6 +220,7 @@ class _BootPageState extends State<_BootPage> {
       geoLbsPort: GeoLbsPort(http: amapHttp),
       locationSensor: locationSensor,
       favoriteRepository: FavoriteRepository(store: favoriteStore),
+      weatherCityRepository: WeatherCityRepository(store: weatherCityStore),
       calendarPort: CalendarPort(
         feeds: feeds,
         markers: MarkerRepository(store: markerStore),
@@ -246,9 +257,14 @@ class _BootPageState extends State<_BootPage> {
             gateway: scope.gateway,
             locationSensor: scope.locationSensor,
             lastLocation: scope.lastLocationPort,
+            weatherPort: scope.weatherPort,
           ),
           AppDomain.calendar: CalendarPage(port: scope.calendarPort),
-          AppDomain.weather: WeatherPage(port: scope.weatherPort),
+          AppDomain.weather: WeatherPage(
+            port: scope.weatherPort,
+            cities: scope.weatherCityRepository,
+            gateway: scope.gateway,
+          ),
         },
       ),
       settings: SettingsPage(
@@ -273,6 +289,7 @@ class _AppScope {
     required this.geoLbsPort,
     required this.locationSensor,
     required this.favoriteRepository,
+    required this.weatherCityRepository,
     required this.calendarPort,
     required this.weatherPort,
     required this.gateway,
@@ -295,6 +312,9 @@ class _AppScope {
 
   /// 收藏地点只读聚合（R5；写经 [gateway] 用户侧注册表）。
   final FavoriteRepository favoriteRepository;
+
+  /// 天气多城市只读聚合（R5；增删经 [gateway] 用户侧注册表）。
+  final WeatherCityRepository weatherCityRepository;
   final CalendarPort calendarPort;
   final WeatherPort weatherPort;
 

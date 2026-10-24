@@ -108,6 +108,8 @@ class _CalendarPageState extends State<CalendarPage> {
       _overview = view;
       _densities = densities;
       _overviewLoading = false;
+      // 读取成功即权限提示已过时——不清会一直挂着「重新读取即可」误导用户。
+      if (view.errorCode == null) _permissionHint = null;
     });
   }
 
@@ -139,7 +141,7 @@ class _CalendarPageState extends State<CalendarPage> {
     _loadOverview();
   }
 
-  /// 「今天」归位：回到当月、选中今天（日快照面板已移除）。
+  /// 「今天」归位：回到当月、选中今天，并展开当日快照面板。
   void _goToday() {
     final now = DateTime.now();
     setState(() {
@@ -163,7 +165,7 @@ class _CalendarPageState extends State<CalendarPage> {
     }
   }
 
-  /// 月格点选 → 仅更新选中高亮（日视图已移除，不再弹快照面板）。
+  /// 月格点选 → 更新选中高亮，并展开底部当日快照面板。
   void _onDaySelected(String date) {
     setState(() {
       _selectedDate = date;

@@ -47,3 +47,6 @@ app.*.map.json
 # Widget Preview related
 .widget_preview/
 context/CURRENT
+
+# dev-loop bp flock 锚点（进程级运行时文件，不入库）
+*.bp.lock

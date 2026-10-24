@@ -126,6 +126,22 @@ void main() {
     expect(r.warnings.single['code'], CalendarErr.permissionDenied);
   });
 
+  test('系统源未授权 + 自愈指引 → warning 透传 suggestion（缺省不出键）', () async {
+    final p = CompositeCalendarProvider(
+      _FakeIcs(),
+      system: _FakeSystem(
+          error: const CalendarFeedException(CalendarErr.permissionDenied,
+              'READ_CALENDAR 未授权',
+              suggestion: '请在 App 日历页点「授予日历权限」')),
+    );
+    final r = await p.query(rangeStart: '2026-10-01', rangeEnd: '2026-10-07');
+    expect(r.warnings.single['suggestion'], contains('授予日历权限'));
+    // 无 suggestion 的警告（如源未注入）不出该键——结构向后兼容。
+    final p2 = CompositeCalendarProvider(_FakeIcs());
+    final r2 = await p2.query(rangeStart: '2026-10-01', rangeEnd: '2026-10-07');
+    expect(r2.warnings.single.containsKey('suggestion'), isFalse);
+  });
+
   test('E 拍板脱敏：系统源 location / description 复用 maskPii', () async {
     final p = CompositeCalendarProvider(_FakeIcs(), system: _FakeSystem());
     final r = await p.query(rangeStart: '2026-10-01', rangeEnd: '2026-10-07');

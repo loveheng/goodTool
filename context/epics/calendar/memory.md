@@ -50,4 +50,4 @@ last-merge: 2026-10-20
 - 踩坑（7 条，通用可复用）：`context/lessons.md` §calendar —— ICS 禁 `toUtc()`、失败信封须走 `structuredError`、跨度逐月推进、`BYMONTHDAY` 按 FREQ 分流、农历库约定读源码钉死、null-aware 对 false 仍出字段、合并层禁 `addAll` 不可变列表。
 
 ## 断点
-- [断点] **calendar 域 P1+P2-①~⑧ 全部落地**（2026-10-20）：线级 4 域 26 action **全部真实可用（26/26）**；系统日历源经 `SystemCalendarPort` → `MethodChannelSystemCalendarPort` → Kotlin `SystemCalendarChannel.kt` 收口，ICS + system 合并走 `CompositeCalendarProvider`（子源失败显式 warnings）。残留两项（运行时权限申请 UI 入口、隐私设置「日程敏感字段过滤」开关）**已迁至 `ui-console` epic 域内待办**——本域能力面无待办，等待新子任务。
+- [断点] 下一步：time_now 已上线（15 action 全可用）；等待新子任务（候选：闹钟/提醒类真实世界动作、节假日表 OTA 热更）
