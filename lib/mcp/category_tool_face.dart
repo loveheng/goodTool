@@ -221,6 +221,8 @@ class CategoryTool {
     this.categoryDescription,
     this.commandGateway, {
     this.visibility = ToolVisibility.private,
+    this.readOnlyHint = false,
+    this.destructiveHint = false,
   });
 
   /// MCP 线级工具名。
@@ -239,6 +241,15 @@ class CategoryTool {
   /// 默认 [ToolVisibility.private]（default-deny）。纯声明——不影响本侧派发与
   /// `tools/list` 条目数，曝光策略归宿主。
   final ToolVisibility visibility;
+
+  /// MCP 标准 annotation（SDK 0.2.0 对齐）：本分类全部子操作无副作用。
+  /// 默认 false——**仅 true 时随 [toSchema] 下发 `annotations.readOnlyHint`**
+  /// （与 SDK 反射派发器同口径：false 不下发，不臆造只读声明）。
+  final bool readOnlyHint;
+
+  /// MCP 标准 annotation（SDK 0.2.0 对齐）：本分类含可能破坏性的子操作（如删除）。
+  /// 默认 false，仅 true 时下发 `annotations.destructiveHint`。
+  final bool destructiveHint;
 
   final Map<String, SubAction> _subs = {};
 
@@ -267,6 +278,13 @@ class CategoryTool {
           },
           'required': ['action'],
         },
+        // MCP 标准 annotations（SDK 0.2.0）：readOnlyHint / destructiveHint，
+        // 仅 true 时下发（false 缺席），与 SDK 反射派发器 ToolDispatcher 同口径。
+        if (readOnlyHint || destructiveHint)
+          'annotations': {
+            if (readOnlyHint) 'readOnlyHint': true,
+            if (destructiveHint) 'destructiveHint': true,
+          },
         // GoodHub 私有扩展（SDK 0.2.0 约定）：纯声明，宿主据此分桶。本侧始终下发
         // （private 也下发）——与 SDK 一致保持「tools/list 反映能力全集且不臆造
         // 曝光」，漏节点才等于把判定权交给宿主瞎猜。

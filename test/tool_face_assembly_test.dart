@@ -90,6 +90,23 @@ void main() {
         expect(goodhub['visibility'], 'shared', reason: '${s['name']} 未标 shared');
       }
     });
+
+    test('annotations 下发：三只读域标 readOnlyHint，system_pim 标 destructiveHint', () {
+      // SDK 0.2.0 annotations（MCP 标准 hint）：Dart 侧 toSchema 下发，仅 true
+      // 时下发（false 缺席），与 SDK 反射派发器同口径。漏发即宿主无从区分读写。
+      final byName = {
+        for (final s in face().schemas()) s['name'] as String: s,
+      };
+      for (final name in ['math_utility', 'geo', 'weather']) {
+        final ann = byName[name]!['annotations'] as Map;
+        expect(ann['readOnlyHint'], isTrue, reason: '$name 未标 readOnlyHint');
+        expect(ann.containsKey('destructiveHint'), isFalse);
+      }
+      final pim = byName['system_pim']!['annotations'] as Map;
+      expect(pim['destructiveHint'], isTrue, reason: 'system_pim 未标 destructiveHint');
+      expect(pim.containsKey('readOnlyHint'), isFalse,
+          reason: 'system_pim 含 W 档写子操作，不得声明只读');
+    });
   });
 
   group('派发闭环', () {

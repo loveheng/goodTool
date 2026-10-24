@@ -36,6 +36,8 @@ CategoryTool buildWeatherTool(WeatherProvider provider) {
     '全部缺失返回 ERR_LOCATION_UNAVAILABLE。与日历联动做出行建议时常用 days=7。',
     null,
     visibility: ToolVisibility.shared,
+    // SDK 0.2.0 annotations：全部子操作（预报/空气）均为只读查询。
+    readOnlyHint: true,
   );
   cat.register(_WeatherForecastSub(provider));
   cat.register(_WeatherAirSub(provider));

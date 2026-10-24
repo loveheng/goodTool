@@ -24,6 +24,8 @@ CategoryTool buildMathTool() {
     '计算与单位换算（高精度表达式求值 / 单位双向换算 / 单位自省）',
     null,
     visibility: ToolVisibility.shared,
+    // SDK 0.2.0 annotations：三子操作（求值/换算/自省）均为纯函数，无副作用。
+    readOnlyHint: true,
   );
   cat.register(_CalcEvalSub());
   cat.register(_UnitConvertSub());

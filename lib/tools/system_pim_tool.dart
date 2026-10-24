@@ -61,6 +61,9 @@ CategoryTool buildSystemPimTool(
     '写操作（订阅 / 退订 / 刷新 / 增删标记）属用户委托写，须会话已鉴权。',
     gateway,
     visibility: ToolVisibility.shared,
+    // SDK 0.2.0 annotations：含 W 档写子操作（订阅/退订/刷新/标记增删，其中
+    // marker delete 为删除类），不作只读声明，声明可能破坏性。
+    destructiveHint: true,
   );
   // R 档 · 已实现（纯函数）
   cat.register(_CalendarDateCalcSub(holidays));

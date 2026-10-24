@@ -45,6 +45,8 @@ CategoryTool buildGeoTool(
     '入参坐标可用 coordSystem 声明 WGS84|GCJ02（GPS 原生默认 WGS84），内核在调用高德前统一归一化到 GCJ-02。',
     null,
     visibility: ToolVisibility.shared,
+    // SDK 0.2.0 annotations：全部子操作（定位/检索/规划/静态图）均为只读查询。
+    readOnlyHint: true,
   );
   cat.register(_GeoCurrentSub(sensor, http));
   cat.register(_GeoIpLocateSub(http));
