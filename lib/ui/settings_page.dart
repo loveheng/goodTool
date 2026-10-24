@@ -9,6 +9,7 @@ import '../service/mcp_controller.dart';
 import '../ui_ports/settings_port.dart';
 import '../ui_ports/status_port.dart';
 import 'components/app_components.dart';
+import 'components/readiness_components.dart';
 import 'mcp_service_page.dart';
 
 /// 设置页：敏感设置自决 + 「关于」长按隐藏入口（MCP 调试服务控制）。

@@ -2,118 +2,11 @@ library;
 
 import 'package:flutter/material.dart';
 
-import '../../ui_ports/calculator_port.dart';
-import '../../ui_ports/status_port.dart';
 import '../tokens/app_tokens.dart';
 
 /// 取当前主题的 token（唯一出处 `lib/ui/tokens/`；组件内禁散落魔法值）。
 AppTokens tokensOf(BuildContext context) =>
     Theme.of(context).extension<AppTokens>()!;
-
-/// 状态点：**色相 + 形状双通道**（ui-design §6 无障碍红线——禁仅以颜色传达状态）。
-///
-/// 形状约定：正常 = 圆、缺失 = 方形、被拒 = 三角。色弱与强光下仅凭第二通道可判态。
-class StatusDot extends StatelessWidget {
-  const StatusDot({super.key, required this.state});
-
-  final ReadinessState state;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = tokensOf(context);
-    final p = t.palette;
-    final size = t.metrics.statusDotSize;
-    final color = switch (state) {
-      ReadinessState.ready => p.l1Ok,
-      ReadinessState.missing => p.terminalMuted,
-      ReadinessState.denied => p.danger,
-    };
-    return SizedBox(
-      width: size,
-      height: size,
-      child: switch (state) {
-        ReadinessState.ready => DecoratedBox(
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-        ReadinessState.missing => DecoratedBox(
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(t.metrics.radiusBadge),
-            ),
-          ),
-        ReadinessState.denied => CustomPaint(
-            painter: _TrianglePainter(color),
-          ),
-      },
-    );
-  }
-}
-
-/// 被拒态三角（形状通道的第二判据）。
-class _TrianglePainter extends CustomPainter {
-  _TrianglePainter(this.color);
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final path = Path()
-      ..moveTo(size.width / 2, 0)
-      ..lineTo(size.width, size.height)
-      ..lineTo(0, size.height)
-      ..close();
-    canvas.drawPath(path, Paint()..color = color);
-  }
-
-  @override
-  bool shouldRepaint(_TrianglePainter oldDelegate) => oldDelegate.color != color;
-}
-
-/// 就绪药丸：状态点 + 文字标签（**禁仅以绿点示意**）。
-class ReadinessPill extends StatelessWidget {
-  const ReadinessPill({super.key, required this.item});
-
-  final ReadinessItem item;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = tokensOf(context);
-    final p = t.palette;
-    final label = switch (item.state) {
-      ReadinessState.ready => '就绪',
-      ReadinessState.missing => '未就绪',
-      ReadinessState.denied => '被拒',
-    };
-    final stateColor = switch (item.state) {
-      ReadinessState.ready => p.l1Ok,
-      ReadinessState.missing => p.terminalMuted,
-      ReadinessState.denied => p.danger,
-    };
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: t.metrics.space8,
-        vertical: t.metrics.space4,
-      ),
-      decoration: BoxDecoration(
-        border: Border.all(color: p.hairline, width: t.metrics.borderWidth),
-        borderRadius: BorderRadius.circular(t.metrics.radiusBadge),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          StatusDot(state: item.state),
-          SizedBox(width: t.metrics.space4),
-          Text(item.label, style: t.typeScale.compact),
-          SizedBox(width: t.metrics.space4),
-          Text(
-            label,
-            style: t.typeScale.compact.copyWith(color: stateColor),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 /// 细边框卡（1dp hairline；禁大范围弥散投影）。
 class SectionCard extends StatelessWidget {
@@ -256,47 +149,6 @@ class ErrorLine extends StatelessWidget {
               style: t.typeScale.micro.copyWith(color: t.palette.textMuted),
             ),
           ),
-      ],
-    );
-  }
-}
-
-/// 计算结果展示：**双轨出参**（格式化串 + 无损机器值）——计算器子页面用。
-class CalcResultCard extends StatelessWidget {
-  const CalcResultCard({super.key, required this.view});
-
-  final CalcView view;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = tokensOf(context);
-    if (!view.ok) {
-      return ErrorLine(
-        code: view.errorCode,
-        message: view.message,
-        suggestion: view.suggestion,
-      );
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(view.text ?? '', style: t.typeScale.listItem),
-        SizedBox(height: t.metrics.space4),
-        TelemetryText(view.numeric ?? ''),
-        if (view.formula != null) ...<Widget>[
-          SizedBox(height: t.metrics.space4),
-          Text(
-            view.formula!,
-            style: t.typeScale.micro.copyWith(color: t.palette.textMuted),
-          ),
-        ],
-        if (view.warning != null) ...<Widget>[
-          SizedBox(height: t.metrics.space4),
-          Text(
-            view.warning!,
-            style: t.typeScale.micro.copyWith(color: t.palette.l2Warn),
-          ),
-        ],
       ],
     );
   }

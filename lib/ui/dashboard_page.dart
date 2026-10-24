@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../ui_ports/status_port.dart';
 import 'components/app_components.dart';
+import 'components/readiness_components.dart';
 
 /// 仪表盘：服务状态 + 权限就绪矩阵 + 实时调用流水。
 ///

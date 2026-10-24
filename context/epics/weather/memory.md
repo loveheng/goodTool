@@ -49,5 +49,8 @@ last-merge: 2026-10-24
 
 - 2026-10-24 **域深化四件上线（weather 1→5 action，线级 4 域 33 action；607 项单测）**：`weather_air`（AQI /v7/air/now）/ `weather_indices`（生活指数 1d|3d，type 数字或逗号分隔）/ `weather_astronomy`（日出日落，date 缺省设备今日）/ `weather_minutely`（分钟级降水 summary+2h 序列）。**共用 Key/Host/传输层/回退链/配额护栏**：provider 抽 `_guardedFetch` 共享通道（TTL→冷却→singleflight→队列+pacing），四件**独立缓存键位**（`air:`/`idx:`/`solar:`/`min:` 前缀）不与预报互串；`_fetchOne` 单端点投影（objectKey→now / listKey→forecast / summaryOf→now.summary，空段不出键）；工具层 `_parseLocArgs` 五动作统一宽容解析（G5 不兜底）。**待真机验**：indices/astronomy/minutely 开发版账号是否含这些端点。G1 契约先行：weather.md 增四件契约表。
 
+- 2026-10-24 **真机反馈手势化改版收口（611 项单测 + analyze 0 issue + arch-guard 7 条全过）**：① 详情并入城市卡——手风琴卡片就地展开（`_expandedId` 单开，无独立详情区块，缓存回放标记并入更新时间行）；② 手势代替按钮——Dismissible 左滑删除（乐观移除+失败经 store 重读回滚+撤销走 Actor 配额校验）、搜索提交走键盘搜索键；③ 核查收口：逐城缓存聚合与地图选点加城市经核查均已在位（零新增功能代码），回滚 UI 不消费的冗余 current/nowOf 单请求通道（与摘要=详情同键设计冲突）。
+- Ref: docs/product/weather.md ## 决策日志（手势化+手风琴条目）
+
 ## 断点
-- [断点] 下一步：真机复验天气页新手势交互（左滑删除/手风琴展开/键盘搜索）；另：域深化四件真实账号权限待验（indices/astronomy/minutely 开发版是否含）
+- [断点] 下一步：天气域功能面收口（多城市+搜索+地图协同+逐城聚合全部落地，已随 5a27b55 提交）；下一步：真机侧载全量验收（天气页手势交互+地图选点加城市），或切其他任务

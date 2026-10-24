@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-10-20
+updated: 2026-10-24
 ---
 
 # docs · 结构索引
@@ -18,3 +18,4 @@ updated: 2026-10-20
   - 领域网关工具（分类嵌入模式落地基线，26 action 全可用）→ [project/domain_gateway.md](project/domain_gateway.md)
   - 控制台 UI 落地设计（人前端：页面规格 + 接缝 + 用户命令族）→ [project/ui-console.md](project/ui-console.md)
   - 计算器区块草稿台设计（Soulver 行模型的区块化演进：区块交互规格 + 增删流 + 美学口径）→ [project/calculator-blocks.md](project/calculator-blocks.md)
+  - goodTemplate 模板抽取与同步（受控快照脚手架定位 + 清单同步协议 + 起底流程）→ [project/good-template.md](project/good-template.md)

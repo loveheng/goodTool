@@ -6,35 +6,12 @@ import '../mcp/mcp_server.dart';
 import '../mcp/settings_keys.dart';
 import '../repository/settings_repository.dart';
 import '../service/mcp_controller.dart';
+import 'readiness.dart';
 
-/// 就绪态（**双通道**：色相 + 文字/图标，ui-design §6 无障碍红线）。
-enum ReadinessState {
-  /// 正常可用（L1）。
-  ready,
+// Readiness 元类型上移中性件（纯 Dart，组件闭包随迁模板）；本 export 保持原 import 路径兼容。
+export 'readiness.dart';
 
-  /// 未配置 / 未接入（灰阶）。
-  missing,
 
-  /// 被拒（玫瑰）——**禁与 missing 同灰阶混淆**。
-  denied,
-}
-
-/// 某项能力的就绪条目。
-class ReadinessItem {
-  const ReadinessItem({
-    required this.label,
-    required this.state,
-    this.detail,
-  });
-
-  /// 能力名（定位 / 日历 / 地图 Key / 天气 Key）。
-  final String label;
-
-  final ReadinessState state;
-
-  /// 补充说明（人话中文；禁直出内部英文相位名）。
-  final String? detail;
-}
 
 /// MCP 服务状态视图。
 class ServiceStatusView {
