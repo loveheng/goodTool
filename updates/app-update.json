@@ -1,8 +1,8 @@
 {
-  "versionCode": 35,
-  "versionName": "0.1.1",
+  "versionCode": 36,
+  "versionName": "0.1.2",
   "applicationId": "com.goodhub.goodtools",
-  "apkUrl": "https://r2.oklhj.eu.org/updates/goodtools/app-35.apk",
-  "sha256": "e840ce613751791fb34a20bcccd88d11d2bf61f609f41e2fec0c99681e26dc2f",
-  "changelog": "feat(mcp): CategoryTool 下发 MCP 标准 annotations（readOnlyHint/destructiveHint）"
+  "apkUrl": "https://r2.oklhj.eu.org/updates/goodtools/app-36.apk",
+  "sha256": "4399192f149890e028d8e63eff04f2d58875fc3dd867821db606918bbd5072b8",
+  "changelog": "feat(calendar): 月/年视图滑动改为 PageView 式跟手 + 相邻页预览（方案B）"
 }
