@@ -34,7 +34,8 @@ class CalendarPage extends StatefulWidget {
   State<CalendarPage> createState() => _CalendarPageState();
 }
 
-class _CalendarPageState extends State<CalendarPage> {
+class _CalendarPageState extends State<CalendarPage>
+    with SingleTickerProviderStateMixin {
   /// 权限申请反馈（人话；透出机器码）。
   String? _permissionHint;
 
@@ -53,16 +54,39 @@ class _CalendarPageState extends State<CalendarPage> {
   double _gestureScale = 1;
   int _gesturePointers = 1;
 
-  /// 切页动画方向（用户反馈「左右滑动生硬直接变」）：+1 = 下一月/年（新内容
-  /// 从右滑入）、-1 = 上一项（从左滑入）、0 = 无方向纯淡入（跳月/今天/点选落月）。
-  double _pendingShiftDx = 0;
-
-  /// 月/年视图数据（按当前定位区间查询的逐日密度）。
+  /// 月/年视图数据（当前定位区间；用于权限/源告警引导，不参与网格密度）。
   CalendarRangeOverviewView? _overview;
 
-  /// 月/年视图数据装配完成后的格子映射（`YYYY-MM-DD` → 密度）。
-  Map<String, CalendarDayDensity> _densities = const <String, CalendarDayDensity>{};
+  /// 逐月/逐年密度缓存：`YYYY-MM`（月）或 `YYYY`（年）槽位 → 该区间逐日密度。
+  /// 切页时预载当前 ±1 槽位，供「跟手 + 相邻页预览」的滑动条使用。
+  final Map<String, Map<String, CalendarDayDensity>> _densityCache =
+      <String, Map<String, CalendarDayDensity>>{};
+
+  /// 月离线事实缓存（`YYYY-MM` → 事实映射），避免滑动逐帧重算农历/节假日
+  /// （稳定引用也使相邻月 MonthGrid 在拖拽时不被重建）。
+  final Map<String, Map<String, CalendarDayFacts>> _monthFactsCache =
+      <String, Map<String, CalendarDayFacts>>{};
+
+  /// 滑动条单页宽度（由 LayoutBuilder 量得；用于实时平移与吸附阈值）。
+  double _pageWidth = 0;
+
+  /// 松手吸附动画（把实时拖拽位移补完到目标页或回弹到 0）。
+  late final AnimationController _swipe = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 240),
+  )..addListener(_onSwipeTick);
+
+  double _releaseFrom = 0;
+  double _releaseTo = 0;
+  int _animToken = 0;
+
   bool _overviewLoading = false;
+
+  /// 两指捏合进年视图的速度阈值（scale<1 即收缩，无需速度）。
+  static const double _kPinchInScale = 0.9;
+
+  /// 拖拽吸附阈值（占单页宽度比例）：超过即判定翻页意图。
+  static const double _kSwipeRatio = 0.3;
 
   /// 选中日事件（月视图底部下拉面板用；只取事件标题/时间，不含地点等敏感字段）。
   List<EventView>? _events;
@@ -86,36 +110,182 @@ class _CalendarPageState extends State<CalendarPage> {
     return '${now.year}-${two(now.month)}-${two(now.day)}';
   }
 
-  /// 加载月/年视图数据：month 查当月区间，year 查整年（端口内部分片）。
+  String _two(int v) => v.toString().padLeft(2, '0');
+
+  /// 加载月/年视图数据：预载「当前 ±1」槽位密度进 [_densityCache]，供滑动条做
+  /// 相邻页预览；当前槽位的总览（告警/错误）存 [_overview] 供引导展示。
   Future<void> _loadOverview() async {
     setState(() => _overviewLoading = true);
-    final String start;
-    final String end;
-    String two(int v) => v.toString().padLeft(2, '0');
+    final tasks = <(String, String, String)>[]; // (slot, start, end)
     if (_mode == _CalMode.month) {
-      start = '$_viewYear-${two(_viewMonth)}-01';
-      final lastDay = DateTime(_viewYear, _viewMonth + 1, 0).day;
-      end = '$_viewYear-${two(_viewMonth)}-$lastDay';
+      for (final m in <(int, int)>[
+        _adjacentMonth(-1),
+        (_viewYear, _viewMonth),
+        _adjacentMonth(1),
+      ]) {
+        final lastDay = DateTime(m.$1, m.$2 + 1, 0).day;
+        tasks.add((
+          '${m.$1}-${_two(m.$2)}',
+          '${m.$1}-${_two(m.$2)}-01',
+          '${m.$1}-${_two(m.$2)}-$lastDay',
+        ));
+      }
     } else {
-      start = '$_viewYear-01-01';
-      end = '$_viewYear-12-31';
+      for (final y in <int>[_viewYear - 1, _viewYear, _viewYear + 1]) {
+        tasks.add(('$y', '$y-01-01', '$y-12-31'));
+      }
     }
-    final view = await widget.port.rangeOverview(rangeStart: start, rangeEnd: end);
+    final views = await Future.wait(
+      tasks.map(
+        (t) => widget.port.rangeOverview(rangeStart: t.$2, rangeEnd: t.$3),
+      ),
+    );
     if (!mounted) return;
-    final densities = <String, CalendarDayDensity>{
+    for (var i = 0; i < tasks.length; i++) {
+      _storeDensities(tasks[i].$1, views[i]);
+    }
+    final primary = views[1]; // 中间槽位即当前页。
+    setState(() {
+      _overview = primary;
+      _overviewLoading = false;
+      // 读取成功即权限提示已过时——不清会一直挂着「重新读取即可」误导用户。
+      if (primary.errorCode == null) _permissionHint = null;
+    });
+  }
+
+  void _storeDensities(String slot, CalendarRangeOverviewView view) {
+    _densityCache[slot] = <String, CalendarDayDensity>{
       for (final d in view.days)
         d.date: CalendarDayDensity(
           eventCount: d.eventCount,
           markerCount: d.markerCount,
         ),
     };
-    setState(() {
-      _overview = view;
-      _densities = densities;
-      _overviewLoading = false;
-      // 读取成功即权限提示已过时——不清会一直挂着「重新读取即可」误导用户。
-      if (view.errorCode == null) _permissionHint = null;
+  }
+
+  /// 相邻月（delta = -1 / +1），自动跨年进位/借位。
+  (int, int) _adjacentMonth(int delta) {
+    var y = _viewYear;
+    var m = _viewMonth + delta;
+    if (m < 1) {
+      m = 12;
+      y -= 1;
+    } else if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+    return (y, m);
+  }
+
+  /// 松手吸附动画每帧：把 [_gestureDx] 从起止插值到目标位移。
+  void _onSwipeTick() {
+    if (!mounted) return;
+    setState(
+      () => _gestureDx = _releaseFrom + (_releaseTo - _releaseFrom) * _swipe.value,
+    );
+  }
+
+  /// 把实时拖拽位移补完到目标（±_pageWidth 翻页 或 0 回弹）。
+  void _animateRelease(double to, {VoidCallback? onDone}) {
+    _releaseFrom = _gestureDx;
+    _releaseTo = to;
+    final token = ++_animToken; // 令旧的 pending .then 失效，避免过期回调节流。
+    _swipe.forward(from: 0).then((_) {
+      if (!mounted || token != _animToken) return;
+      setState(() => _gestureDx = to);
+      onDone?.call();
     });
+  }
+
+  /// 提交翻月（吸附动画结束后调用）：视图落到相邻月并预载其 ±1 密度。
+  void _commitMonth(int delta) {
+    final adj = _adjacentMonth(delta);
+    setState(() {
+      _viewYear = adj.$1;
+      _viewMonth = adj.$2;
+      _gestureDx = 0;
+    });
+    _loadOverview();
+  }
+
+  /// 提交翻年（吸附动画结束后调用）。
+  void _commitYear(int delta) {
+    setState(() {
+      _viewYear += delta;
+      _gestureDx = 0;
+    });
+    _loadOverview();
+  }
+
+  /// 月视图单页（当前页可点选/高亮；相邻页只读、不响应点选，避免跨月误选）。
+  Widget _monthPage(int year, int month, bool isCurrent) {
+    return MonthGrid(
+      year: year,
+      month: month,
+      densities:
+          _densityCache['$year-${_two(month)}'] ?? const <String, CalendarDayDensity>{},
+      selectedDate: isCurrent ? _selectedDate : '',
+      todayDate: _today,
+      dayFacts: _monthFactsFor(year, month),
+      onDaySelected: isCurrent ? _onDaySelected : null,
+    );
+  }
+
+  /// 年视图单页（同理：仅当前年可点月）。
+  Widget _yearPage(int year, bool isCurrent) {
+    final sel = _selectedDate.split('-');
+    final selYear = sel.isNotEmpty ? int.tryParse(sel[0]) ?? -1 : -1;
+    final selMonth = sel.length >= 2 ? int.tryParse(sel[1]) ?? 0 : 0;
+    final selDay = sel.length >= 3 ? int.tryParse(sel[2]) ?? -1 : -1;
+    return YearGrid(
+      year: year,
+      densities: _densityCache['$year'] ?? const <String, CalendarDayDensity>{},
+      currentMonth: DateTime.now().year == year ? DateTime.now().month : 0,
+      today: DateTime.now(),
+      selectedMonth: isCurrent && selYear == year ? selMonth : 0,
+      selectedDay: isCurrent && selYear == year ? selDay : -1,
+      onMonthSelected: isCurrent ? _onMonthSelected : null,
+    );
+  }
+
+  /// 逐月离线事实映射（农历 / 节假日 / 休班），纯本地、零权限依赖。
+  /// 结果按 `YYYY-MM` 槽位缓存，拖拽时稳定引用，避免逐帧重算与相邻页重建。
+  Map<String, CalendarDayFacts> _monthFactsFor(int year, int month) {
+    final slot = '$year-${_two(month)}';
+    final cached = _monthFactsCache[slot];
+    if (cached != null) return cached;
+    final list = widget.port.monthFacts(year, month);
+    final map = <String, CalendarDayFacts>{};
+    for (var d = 0; d < list.length; d++) {
+      final date = '$year-${_two(month)}-${_two(d + 1)}';
+      final f = list[d];
+      map[date] = CalendarDayFacts(
+        lunarLabel: f.lunarLabel,
+        holidayName: f.holidayName,
+        isHoliday: f.isHoliday,
+        isWorkday: f.isWorkday,
+        description: f.description,
+      );
+    }
+    _monthFactsCache[slot] = map;
+    return map;
+  }
+
+  /// 滑动条单页容器：按 [left] 偏移、固定 [width]、撑满高度，置于 [Stack] 内。
+  Widget _stripPage(double left, double width, Widget child) {
+    return Positioned(
+      left: left,
+      top: 0,
+      bottom: 0,
+      width: width,
+      child: child,
+    );
+  }
+
+  @override
+  void dispose() {
+    _swipe.dispose();
+    super.dispose();
   }
 
   /// 加载选中日事件（底部下拉面板；只取事件标题/时间，不含地点等敏感字段）。
@@ -135,7 +305,7 @@ class _CalendarPageState extends State<CalendarPage> {
   void _goMonth() {
     setState(() {
       _mode = _CalMode.month;
-      _pendingShiftDx = 0; // 视图模式切换不带横滑方向（纯淡入）。
+      _gestureDx = 0; // 视图模式切换：复位滑动条位移。
     });
     _loadOverview();
   }
@@ -143,7 +313,7 @@ class _CalendarPageState extends State<CalendarPage> {
   void _goYear() {
     setState(() {
       _mode = _CalMode.year;
-      _pendingShiftDx = 0;
+      _gestureDx = 0;
     });
     _loadOverview();
   }
@@ -157,20 +327,10 @@ class _CalendarPageState extends State<CalendarPage> {
       _selectedDate = _today;
       _mode = _CalMode.month;
       _showEvents = true;
-      _pendingShiftDx = 0; // 「今天」归位不带方向。
+      _gestureDx = 0;
     });
     _loadOverview();
     _loadEvents(_today);
-  }
-
-  /// 横滑判定（年视图用）：右滑 = 上一项，左滑 = 下一项。
-  void _swipeShift(DragEndDetails details, VoidCallback prev, VoidCallback next) {
-    final v = details.primaryVelocity ?? 0;
-    if (v > _kSwipeVelocity) {
-      prev();
-    } else if (v < -_kSwipeVelocity) {
-      next();
-    }
   }
 
   /// 月格点选 → 更新选中高亮，并展开底部当日快照面板。
@@ -182,42 +342,27 @@ class _CalendarPageState extends State<CalendarPage> {
     _loadEvents(date);
   }
 
-  /// 年视图点迷你月 → 落月视图并定位该月。
+  /// 年视图点迷你月 → 落月视图并定位该月（即时切换，无横滑语义）。
   void _onMonthSelected(int month) {
     setState(() {
       _mode = _CalMode.month;
       _viewMonth = month;
-      _pendingShiftDx = 0; // 年视图点选落月：纵向语义，纯淡入。
+      _gestureDx = 0;
     });
     _loadOverview();
   }
 
+  /// 月视图箭头切月：复用与滑动同套的吸附动画（方向对齐 PageView），
+  /// 落月后由 [_commitMonth] 预载 ±1 密度。
   void _shiftMonth(int delta) {
-    setState(() {
-      // 方向语义对齐 PageView：右滑看上月（旧内容左出、新内容左入），
-      // 左滑看下月反之；跳月/「今天」不带方向（纯淡入）。
-      _pendingShiftDx = delta > 0 ? 1 : -1;
-      var y = _viewYear;
-      var m = _viewMonth + delta;
-      if (m < 1) {
-        m = 12;
-        y -= 1;
-      } else if (m > 12) {
-        m = 1;
-        y += 1;
-      }
-      _viewYear = y;
-      _viewMonth = m;
-    });
-    _loadOverview();
+    _animateRelease(delta > 0 ? -_pageWidth : _pageWidth,
+        onDone: () => _commitMonth(delta));
   }
 
+  /// 年视图箭头切年：同上。
   void _shiftYear(int delta) {
-    setState(() {
-      _pendingShiftDx = delta > 0 ? 1 : -1;
-      _viewYear += delta;
-    });
-    _loadOverview();
+    _animateRelease(delta > 0 ? -_pageWidth : _pageWidth,
+        onDone: () => _commitYear(delta));
   }
 
   /// U12b：未授权 → 引导卡按钮 → 平台通道申请（跳转系统设置）。
@@ -365,62 +510,99 @@ class _CalendarPageState extends State<CalendarPage> {
                                 padding: EdgeInsets.symmetric(
                                   horizontal: t.metrics.space8,
                                 ),
-                                // 单一 scale 识别器同时承载「单指横滑切月」与
-                                // 「双指捏合收缩 → 年视图」（§6 双通道：手势 + 可见箭头/标题）。
-                                child: GestureDetector(
-                                  onScaleStart: (d) {
-                                    _gestureDx = 0;
-                                    _gestureScale = 1.0;
-                                    _gesturePointers = d.pointerCount;
-                                  },
-                                  onScaleUpdate: (d) {
-                                    _gestureDx += d.focalPointDelta.dx;
-                                    _gestureScale = d.scale;
-                                  },
-                                  onScaleEnd: (d) {
-                                    // 进年视图须明确双指捏合（pointerCount>=2），
-                                    // 单指横滑绝不误触——避免「滑一下闪到年视图」的闪屏。
-                                    if (_gesturePointers >= 2 &&
-                                        _gestureScale < 0.9) {
-                                      _goYear();
-                                    } else if (_gestureDx.abs() > 60) {
-                                      _gestureDx > 0
-                                          ? _shiftMonth(-1)
-                                          : _shiftMonth(1);
-                                    }
-                                  },
-                                  child: AnimatedSwitcher(
-                                    // 切月过渡（用户反馈「生硬直接变」）：方向
-                                    // 感知滑动 + 淡入；手势识别器包在外层，过渡
-                                    // 期间连续滑动手势不丢。
-                                    duration: const Duration(milliseconds: 240),
-                                    switchInCurve: Curves.easeOut,
-                                    switchOutCurve: Curves.easeIn,
-                                    transitionBuilder: (child, animation) =>
-                                        FadeTransition(
-                                      opacity: animation,
-                                      child: SlideTransition(
-                                        position: Tween<Offset>(
-                                          begin: Offset(_pendingShiftDx, 0),
-                                          end: Offset.zero,
-                                        ).animate(animation),
-                                        child: child,
+                                // LayoutBuilder 量得单页宽度；3 页（prev/当前/next）
+                                // 并排，实时跟随手指平移，松手吸附——「跟手 + 相邻月预览」。
+                                child: LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    _pageWidth = constraints.maxWidth;
+                                    final prev = _adjacentMonth(-1);
+                                    final next = _adjacentMonth(1);
+                                    return GestureDetector(
+                                      // 单一 scale 识别器同时承载「单指横滑切月（跟手 +
+                                      // 相邻月预览）」与「双指捏合收缩 → 年视图」（§6 双通道）。
+                                      onScaleStart: (d) {
+                                        _gestureDx = 0;
+                                        _gestureScale = 1.0;
+                                        _gesturePointers = d.pointerCount;
+                                        _animToken++; // 作废进行中的吸附动画
+                                        _swipe.stop();
+                                      },
+                                      onScaleUpdate: (d) {
+                                        _gestureScale = d.scale;
+                                        if (_gesturePointers == 1) {
+                                          _gestureDx += d.focalPointDelta.dx;
+                                          if (_pageWidth > 0) {
+                                            _gestureDx = _gestureDx.clamp(
+                                              -_pageWidth,
+                                              _pageWidth,
+                                            );
+                                          }
+                                          setState(() {});
+                                        }
+                                      },
+                                      onScaleEnd: (d) {
+                                        // 进年视图须明确双指捏合（pointerCount>=2），
+                                        // 单指横滑绝不误触——避免「滑一下闪到年视图」。
+                                        if (_gesturePointers >= 2 &&
+                                            _gestureScale < _kPinchInScale) {
+                                          _goYear();
+                                          return;
+                                        }
+                                        final threshold = _pageWidth > 0
+                                            ? _pageWidth * _kSwipeRatio
+                                            : 60.0;
+                                        if (_gestureDx <= -threshold) {
+                                          _animateRelease(
+                                            -_pageWidth,
+                                            onDone: () => _commitMonth(1),
+                                          );
+                                        } else if (_gestureDx >= threshold) {
+                                          _animateRelease(
+                                            _pageWidth,
+                                            onDone: () => _commitMonth(-1),
+                                          );
+                                        } else {
+                                          _animateRelease(0);
+                                        }
+                                      },
+                                      child: ClipRect(
+                                        child: Transform.translate(
+                                          offset: Offset(_gestureDx, 0),
+                                          child: Stack(
+                                            children: <Widget>[
+                                              _stripPage(
+                                                -_pageWidth,
+                                                _pageWidth,
+                                                _monthPage(
+                                                  prev.$1,
+                                                  prev.$2,
+                                                  false,
+                                                ),
+                                              ),
+                                              _stripPage(
+                                                0,
+                                                _pageWidth,
+                                                _monthPage(
+                                                  _viewYear,
+                                                  _viewMonth,
+                                                  true,
+                                                ),
+                                              ),
+                                              _stripPage(
+                                                _pageWidth,
+                                                _pageWidth,
+                                                _monthPage(
+                                                  next.$1,
+                                                  next.$2,
+                                                  false,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
                                       ),
-                                    ),
-                                    child: KeyedSubtree(
-                                      key: ValueKey(
-                                          'month-$_viewYear-$_viewMonth'),
-                                      child: MonthGrid(
-                                        year: _viewYear,
-                                        month: _viewMonth,
-                                        densities: _densities,
-                                        selectedDate: _selectedDate,
-                                        todayDate: _today,
-                                        dayFacts: _monthFacts(),
-                                        onDaySelected: _onDaySelected,
-                                      ),
-                                    ),
-                                  ),
+                                    );
+                                  },
                                 ),
                               ),
                             ),
@@ -477,49 +659,70 @@ class _CalendarPageState extends State<CalendarPage> {
               ),
             // 年视图撑满：YearGrid 内部 4 行 Expanded，消除底部空白。
             Expanded(
-              child: GestureDetector(
-                // 左右横滑切年（与月视图同手势语义）。
-                onHorizontalDragEnd: (details) => _swipeShift(
-                  details,
-                  () => _shiftYear(-1),
-                  () => _shiftYear(1),
-                ),
-                child: AnimatedSwitcher(
-                  // 切年过渡：与月视图同一方向感知滑动 + 淡入口径。
-                  duration: const Duration(milliseconds: 240),
-                  switchInCurve: Curves.easeOut,
-                  switchOutCurve: Curves.easeIn,
-                  transitionBuilder: (child, animation) => FadeTransition(
-                    opacity: animation,
-                    child: SlideTransition(
-                      position: Tween<Offset>(
-                        begin: Offset(_pendingShiftDx, 0),
-                        end: Offset.zero,
-                      ).animate(animation),
-                      child: child,
-                    ),
-                  ),
-                  child: () {
-                    final sel = _selectedDate.split('-');
-                    final selYear = int.parse(sel[0]);
-                    final selMonth = int.parse(sel[1]);
-                    final selDay = int.parse(sel[2]);
-                    return KeyedSubtree(
-                      key: ValueKey('year-$_viewYear'),
-                      child: YearGrid(
-                        year: _viewYear,
-                        densities: _densities,
-                        currentMonth: DateTime.now().year == _viewYear
-                            ? DateTime.now().month
-                            : 0,
-                        today: DateTime.now(),
-                        selectedMonth: selYear == _viewYear ? selMonth : 0,
-                        selectedDay: selYear == _viewYear ? selDay : -1,
-                        onMonthSelected: _onMonthSelected,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  _pageWidth = constraints.maxWidth;
+                  return GestureDetector(
+                    // 左右横滑切年（与月视图同手势语义）：拖拽实时跟手 + 相邻年预览，
+                    // 松手按位移 / 速度吸附。
+                    onHorizontalDragStart: (_) {
+                      _gestureDx = 0;
+                      _animToken++; // 作废进行中的吸附动画
+                      _swipe.stop();
+                    },
+                    onHorizontalDragUpdate: (d) {
+                      _gestureDx += d.delta.dx;
+                      if (_pageWidth > 0) {
+                        _gestureDx = _gestureDx.clamp(-_pageWidth, _pageWidth);
+                      }
+                      setState(() {});
+                    },
+                    onHorizontalDragEnd: (d) {
+                      final v = d.primaryVelocity ?? 0;
+                      final threshold = _pageWidth > 0
+                          ? _pageWidth * _kSwipeRatio
+                          : 60.0;
+                      if (_gestureDx <= -threshold || v < -_kSwipeVelocity) {
+                        _animateRelease(
+                          -_pageWidth,
+                          onDone: () => _commitYear(1),
+                        );
+                      } else if (_gestureDx >= threshold ||
+                          v > _kSwipeVelocity) {
+                        _animateRelease(
+                          _pageWidth,
+                          onDone: () => _commitYear(-1),
+                        );
+                      } else {
+                        _animateRelease(0);
+                      }
+                    },
+                    child: ClipRect(
+                      child: Transform.translate(
+                        offset: Offset(_gestureDx, 0),
+                        child: Stack(
+                          children: <Widget>[
+                            _stripPage(
+                              -_pageWidth,
+                              _pageWidth,
+                              _yearPage(_viewYear - 1, false),
+                            ),
+                            _stripPage(
+                              0,
+                              _pageWidth,
+                              _yearPage(_viewYear, true),
+                            ),
+                            _stripPage(
+                              _pageWidth,
+                              _pageWidth,
+                              _yearPage(_viewYear + 1, false),
+                            ),
+                          ],
+                        ),
                       ),
-                    );
-                  }(),
-                ),
+                    ),
+                  );
+                },
               ),
             ),
             SizedBox(height: t.metrics.space4),
@@ -536,25 +739,6 @@ class _CalendarPageState extends State<CalendarPage> {
         ],
       ),
     );
-  }
-
-  /// 月视图离线事实映射（农历 / 节假日 / 休班），纯本地、零权限依赖。
-  Map<String, CalendarDayFacts> _monthFacts() {
-    final list = widget.port.monthFacts(_viewYear, _viewMonth);
-    final map = <String, CalendarDayFacts>{};
-    String two(int v) => v.toString().padLeft(2, '0');
-    for (var d = 0; d < list.length; d++) {
-      final date = '$_viewYear-${two(_viewMonth)}-${two(d + 1)}';
-      final f = list[d];
-      map[date] = CalendarDayFacts(
-        lunarLabel: f.lunarLabel,
-        holidayName: f.holidayName,
-        isHoliday: f.isHoliday,
-        isWorkday: f.isWorkday,
-        description: f.description,
-      );
-    }
-    return map;
   }
 }
 
