@@ -36,6 +36,7 @@ class CalendarDayFacts {
     this.holidayName,
     this.isHoliday = false,
     this.isWorkday = false,
+    this.description,
   });
 
   /// 农历角标（'八月' / '十五' / 节气名）。
@@ -49,6 +50,9 @@ class CalendarDayFacts {
 
   /// 调休补班（原本周末但需上班）。
   final bool isWorkday;
+
+  /// 订阅节假日 ICS 的补充说明（DESCRIPTION）；无则为 null。
+  final String? description;
 }
 
 /// 星期表头（周一起始，中文单字）。
@@ -221,30 +225,39 @@ class _DayCell extends StatelessWidget {
     final p = t.palette;
     final f = facts;
 
-    // 日号颜色（§6 双通道：颜色非唯一判据，today 另有形状通道）：
-    // 选中(实底)→onStatus；法定假→l2Accent（喜庆强调色）；补班→terminalMuted；
-    // 空日→textMuted；其余→onSurface。
+    // 特殊事件配色法则（美学 + HCI 双评估，详见改动说明）：
+    //   假期 → l2Accent（暖橙）：喜庆/放假的正向强调，暖色在该语境读「可休息」；
+    //   补班 → l1Info（冷青）：与暖橙形成高色相对比，读「非自由、需上班」反向提醒。
+    // 二者均 ≥4.5:1（§6 正文红线），且与事件点（l1Info 通用事件标识）分属不同通道——
+    // 颜色非唯一判据，另有「休/班」文字角标双通道兜底（§6）。
+    final hasEvents = !density.isEmpty;
     final dayColor = isSelected
         ? p.onStatus
         : f?.isHoliday == true
             ? p.l2Accent
             : f?.isWorkday == true
-                ? p.terminalMuted
-                : density.isEmpty
-                    ? p.textMuted
-                    : p.onSurface;
+                ? p.l1Info
+                : hasEvents
+                    ? p.onSurface
+                    : p.textMuted;
 
-    // 副行优先级：补班「班」> 节日名 > 农历/节气。
+    // 副行角标（通道②：仅来自 [facts] 的特殊事件语义，与通道①事件点解耦）：
+    // 补班（名称 > 描述 > 班标）> 法定假（名称 > 描述）> 农历/节气。
+    // 完整 DESCRIPTION 交给点选后的底部面板，日格只放简短角标。
     final String? subText;
     final Color subColor;
     if (f == null) {
       subText = null;
       subColor = p.textMuted;
     } else if (f.isWorkday) {
-      subText = '班';
-      subColor = p.terminalMuted;
+      subText = f.holidayName?.isNotEmpty == true
+          ? f.holidayName
+          : (f.description ?? '班');
+      subColor = p.l1Info;
     } else if (f.isHoliday) {
-      subText = f.holidayName;
+      subText = f.holidayName?.isNotEmpty == true
+          ? f.holidayName
+          : f.description;
       subColor = p.l2Accent;
     } else {
       subText = f.lunarLabel;
@@ -296,6 +309,19 @@ class _DayCell extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: t.typeScale.compact.copyWith(color: subColor),
+                    ),
+                  ],
+                  // 通道①：有事件即点一枚事件点（与个人/系统/节假日事件无关，
+                  // 仅表「这天有安排」），与通道②的休/班角标独立共存。
+                  if (hasEvents) ...<Widget>[
+                    SizedBox(height: t.metrics.grid),
+                    Container(
+                      width: t.metrics.grid,
+                      height: t.metrics.grid,
+                      decoration: BoxDecoration(
+                        color: isSelected ? p.onStatus : p.l1Info,
+                        shape: BoxShape.circle,
+                      ),
                     ),
                   ],
                 ],

@@ -45,6 +45,10 @@ class SettingsKeys {
   /// 不进 userWritable/回显枚举，仅 `user_geo_save_last_location` 命令写）。
   static const String geoLastLocation = 'geo_last_location';
 
+  /// 首页快捷方式钉住的域（`AppDomain` 枚举名；用户设置，在能力页选择——
+  /// 不进 userWritable/回显枚举，仅 `user_set_home_pinned_domain` 命令写）。
+  static const String homePinnedDomain = 'home_pinned_domain';
+
   /// 全部**用户可在设置页改写**的键。
   static const List<String> userWritable = <String>[
     amapWebKey,

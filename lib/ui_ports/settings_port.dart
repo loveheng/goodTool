@@ -62,4 +62,11 @@ class SettingsPort {
           'value': value,
         }),
       );
+
+  /// 设置首页快捷方式钉住的域（值 = `AppDomain` 枚举名；校验与落盘在用户侧
+  /// 注册表 Actor，写后回最新快照）。
+  Future<UserCommandResult> setHomePinnedDomain(String domain) =>
+      _gateway.dispatchUser(
+        UserSetHomePinnedDomainCommand(<String, Object?>{'domain': domain}),
+      );
 }

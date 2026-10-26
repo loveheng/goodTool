@@ -42,6 +42,63 @@ void registerCalendarActors(
       (cmd) => _markerDelete(markers, cmd.payload));
 }
 
+/// 用户侧（App 设置页）日历写命令：复用同一份 W 档逻辑，但回**类型化**
+/// [UserCommandResult]——UI 不 jsonDecode（R2），且 AI 不可经工具面触达（信任模型）。
+///
+/// 与 [registerCalendarActors]（AI 侧，文本信封）**物理分离**：同一写逻辑、不同出口，
+/// 落在同一个 [CommandGateway] 实例的两个注册表（AI 侧 `_actors` / 用户侧 `_userActors`）。
+void registerCalendarUserActors(
+  CommandGateway gateway, {
+  required SettingsKv kv,
+  CalendarFeedProvider? feeds,
+}) {
+  gateway.registerUser(
+    'calendar_subscribe',
+    (cmd) => _userResult(_subscribe(kv, cmd.payload)),
+  );
+  gateway.registerUser(
+    'calendar_unsubscribe',
+    (cmd) => _userResult(_unsubscribe(kv, cmd.payload)),
+  );
+  gateway.registerUser(
+    'calendar_refresh',
+    (cmd) => _userResult(_refresh(feeds, cmd.payload)),
+  );
+}
+
+/// 把 W 档文本信封（`{success, ...}`）转类型化用户结果（转换在适配层做，UI 不触 JSON）。
+///
+/// W 档 Actor 回的是 MCP 文本信封（`{'type':'text','text': jsonString}`）；用户侧要
+/// 类型化对象，故在此把首条 text 的 JSON 解析回结构化结果——解析动作住 service 层，
+/// 不落到 UI（R2：UI 禁内联 JSON 编解码）。
+Future<UserCommandResult> _userResult(
+  Future<List<Map<String, Object?>>> envelope,
+) async {
+  final list = await envelope;
+  final text = list
+      .whereType<Map<String, Object?>>()
+      .firstWhere(
+        (m) => m['type'] == 'text',
+        orElse: () => const <String, Object?>{},
+      )['text'] as String?;
+  if (text == null || text.isEmpty) {
+    return const UserCommandResult.failure(
+      'PARSE_FAILED',
+      '命令未返回文本信封',
+    );
+  }
+  final decoded = jsonDecode(text) as Map<String, Object?>;
+  if (decoded['success'] == true) {
+    return UserCommandResult.success(decoded);
+  }
+  final err = decoded['error'] as Map<String, Object?>?;
+  return UserCommandResult.failure(
+    (err?['code'] as String?) ?? 'UNKNOWN',
+    (err?['message'] as String?) ?? '未知错误',
+    suggestion: err?['suggestion'] as String?,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // 订阅源
 // ---------------------------------------------------------------------------

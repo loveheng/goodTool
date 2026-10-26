@@ -93,6 +93,7 @@ class HolidayEntry {
     required this.date,
     required this.name,
     required this.type,
+    this.description,
   });
 
   /// `YYYY-MM-DD`。
@@ -101,6 +102,9 @@ class HolidayEntry {
 
   /// `holiday` = 法定节假日；`workday` = 调休补班（周末上班）。
   final String type;
+
+  /// ICS 事件的补充说明（DESCRIPTION）；普通表条目为 null。
+  final String? description;
 }
 
 /// 节假日表端口：版本化 + 可覆写（测试确定性）+ 支持 OTA 热更。

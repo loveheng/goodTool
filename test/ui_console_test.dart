@@ -12,6 +12,7 @@ import 'package:goodtools/repository/settings_repository.dart';
 import 'package:goodtools/service/in_memory_secret_store.dart';
 import 'package:goodtools/service/persistent_kv.dart';
 import 'package:goodtools/service/settings_actors.dart';
+import 'package:goodtools/ui/capabilities_page.dart';
 import 'package:goodtools/ui_ports/calculator_port.dart';
 import 'package:goodtools/ui_ports/geo_port.dart';
 import 'package:goodtools/ui_ports/settings_port.dart';
@@ -229,6 +230,59 @@ void main() {
       expect(result.ok, isTrue);
       final snapshot = await port.read();
       expect(snapshot.isConfigured(SettingsKeys.amapWebKey), isTrue);
+    });
+  });
+
+  group('首页快捷钉选（user_set_home_pinned_domain）', () {
+    late CommandGateway gateway;
+    late SettingsPort port;
+
+    setUp(() {
+      final kv = SecretAwareKv(
+        plain: InMemoryKv(),
+        secrets: InMemorySecretStore(),
+      );
+      gateway = CommandGateway();
+      final repository = SettingsRepository(kv: kv);
+      SettingsActors(repository: repository).register(gateway);
+      port = SettingsPort(repository, gateway);
+    });
+
+    test('未设置时快照 homePinnedDomain 为 null（默认域属渲染层口径）',
+        () async {
+      final snapshot = await port.read();
+      expect(snapshot.homePinnedDomain, isNull);
+    });
+
+    test('UI 枚举四域均可写，写后快照回读一致（枚举与 Actor 值域对齐）',
+        () async {
+      for (final domain in AppDomain.values) {
+        final result = await port.setHomePinnedDomain(domain.name);
+        expect(result.ok, isTrue, reason: 'domain=${domain.name}');
+        expect((await port.read()).homePinnedDomain, domain.name);
+      }
+    });
+
+    test('未知域 → INVALID_ARGUMENT 带建议（不静默兜底）', () async {
+      final result = await port.setHomePinnedDomain('notepad');
+      expect(result.ok, isFalse);
+      expect(result.errorCode, 'INVALID_ARGUMENT');
+      expect(result.suggestion, isNotNull);
+    });
+
+    test('缺 domain → MISSING_ARGUMENT', () async {
+      final result = await gateway.dispatchUser(
+        UserSetHomePinnedDomainCommand(<String, Object?>{}),
+      );
+      expect(result.ok, isFalse);
+      expect(result.errorCode, 'MISSING_ARGUMENT');
+    });
+
+    test('AI 侧不可触达钉选命令（用户侧注册表隔离）', () async {
+      final result = await gateway.dispatch(
+        UserSetHomePinnedDomainCommand(<String, Object?>{'domain': 'calendar'}),
+      );
+      expect(result.first['text'], contains('未开放给 AI'));
     });
   });
 }

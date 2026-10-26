@@ -1,6 +1,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../mcp/calendar_provider.dart';
 import '../ui_ports/calendar_port.dart';
@@ -550,6 +551,7 @@ class _CalendarPageState extends State<CalendarPage> {
         holidayName: f.holidayName,
         isHoliday: f.isHoliday,
         isWorkday: f.isWorkday,
+        description: f.description,
       );
     }
     return map;
@@ -558,7 +560,11 @@ class _CalendarPageState extends State<CalendarPage> {
 
 /// 选中日事件面板（月视图底部）：点选某天后向下滑动滚动查看该日从日历获取的事件。
 /// 只展示事件标题/时间，不含地点等敏感字段。
-class _EventPanel extends StatelessWidget {
+///
+/// 关闭双通道（§6）：① 点抓手/标题区（可见控件）直接关闭；② 在抓手/标题区**向下拖拽**
+/// 关闭（下拉收起，对齐文件头设计意图）。拖拽限缩在抓手热区，避免吞掉事件列表的滚动；
+/// 拖拽时面板跟手下移，松手未过阈值则弹性回弹，过位移/速度阈值则触感反馈后关闭。
+class _EventPanel extends StatefulWidget {
   const _EventPanel({
     required this.date,
     required this.events,
@@ -572,10 +578,66 @@ class _EventPanel extends StatelessWidget {
   final VoidCallback onClose;
 
   @override
+  State<_EventPanel> createState() => _EventPanelState();
+}
+
+class _EventPanelState extends State<_EventPanel>
+    with SingleTickerProviderStateMixin {
+  /// 抓手下拖的跟手位移（px）；仅向下累积（向上留白不误触）。
+  double _dragOffset = 0;
+
+  /// 回弹动画（未达关闭阈值时从当前位移弹回 0）。
+  late final AnimationController _spring = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 220),
+  );
+
+  /// 拖拽关闭位移阈值（px）：超过即判定关闭意图。
+  static const double _kDismissDistance = 80;
+
+  /// 下甩关闭速度阈值（px/s）：快速下甩即便位移不足也关闭。
+  static const double _kDismissVelocity = 300;
+
+  Animation<double>? _rebound;
+  void _onRebound() {
+    if (mounted) setState(() => _dragOffset = _rebound!.value);
+  }
+
+  void _onDragUpdate(DragUpdateDetails d) {
+    if (d.delta.dy <= 0) return; // 仅向下拖才累积。
+    setState(() => _dragOffset += d.delta.dy);
+  }
+
+  void _onDragEnd(DragEndDetails d) {
+    final v = d.primaryVelocity ?? 0;
+    if (_dragOffset > _kDismissDistance || v > _kDismissVelocity) {
+      HapticFeedback.lightImpact();
+      widget.onClose();
+      return;
+    }
+    // 未达阈值：从当前位移弹性回弹到 0（先摘除旧监听，避免叠加多个动画）。
+    _rebound?.removeListener(_onRebound);
+    _spring.reset();
+    _rebound = Tween<double>(begin: _dragOffset, end: 0).animate(
+      CurvedAnimation(parent: _spring, curve: Curves.easeOut),
+    )..addListener(_onRebound);
+    _spring.forward().then((_) {
+      if (mounted) setState(() => _dragOffset = 0);
+    });
+  }
+
+  @override
+  void dispose() {
+    _rebound?.removeListener(_onRebound);
+    _spring.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final t = tokensOf(context);
     final p = t.palette;
-    final parts = date.split('-');
+    final parts = widget.date.split('-');
     final dt = DateTime(
       int.parse(parts[0]),
       int.parse(parts[1]),
@@ -583,96 +645,120 @@ class _EventPanel extends StatelessWidget {
     );
     final weekday = const <String>['一', '二', '三', '四', '五', '六', '日']
         [dt.weekday - 1];
-    return Container(
-      decoration: BoxDecoration(
-        color: p.surface,
-        border: Border(
-          top: BorderSide(
-            color: p.hairline,
-            width: t.metrics.borderWidthThin,
-          ),
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          GestureDetector(
-            onTap: onClose,
-            child: Column(
-              children: <Widget>[
-                SizedBox(height: t.metrics.space4),
-                Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: p.hairline,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                SizedBox(height: t.metrics.space4),
-                Text(
-                  '${dt.month}月${dt.day}日 周$weekday',
-                  style: t.typeScale.compact.copyWith(color: p.textMuted),
-                ),
-                SizedBox(height: t.metrics.space4),
-              ],
+    return Transform.translate(
+      offset: Offset(0, _dragOffset),
+      child: Container(
+        decoration: BoxDecoration(
+          color: p.surface,
+          border: Border(
+            top: BorderSide(
+              color: p.hairline,
+              width: t.metrics.borderWidthThin,
             ),
           ),
-          SizedBox(
-            height: 168,
-            child: loading
-                ? Center(
-                    child: Text(
-                      '读取中…',
-                      style: t.typeScale.micro.copyWith(color: p.textMuted),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            GestureDetector(
+              // 双通道关闭：点 = 立即关；向下拖 = 下拉收起（限缩在抓手热区）。
+              onTap: widget.onClose,
+              onVerticalDragUpdate: _onDragUpdate,
+              onVerticalDragEnd: _onDragEnd,
+              behavior: HitTestBehavior.opaque,
+              child: Column(
+                children: <Widget>[
+                  SizedBox(height: t.metrics.space4),
+                  Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: p.hairline,
+                      borderRadius: BorderRadius.circular(2),
                     ),
-                  )
-                : (events == null || events!.isEmpty)
-                    ? Center(
-                        child: Text(
-                          '无日程',
-                          style: t.typeScale.micro.copyWith(color: p.textMuted),
-                        ),
-                      )
-                    : ListView.builder(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: t.metrics.space16,
-                          vertical: t.metrics.space4,
-                        ),
-                        itemCount: events!.length,
-                        itemBuilder: (context, i) {
-                          final e = events![i];
-                          return Padding(
-                            padding: EdgeInsets.symmetric(
-                              vertical: t.metrics.space4,
-                            ),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: <Widget>[
-                                SizedBox(
-                                  width: 52,
-                                  child: Text(
-                                    e.timeText,
-                                    style: t.typeScale.micro
-                                        .copyWith(color: p.textMuted),
-                                  ),
-                                ),
-                                SizedBox(width: t.metrics.space8),
-                                Expanded(
-                                  child: Text(
-                                    e.title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: t.typeScale.listItem,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
+                  ),
+                  SizedBox(height: t.metrics.space4),
+                  Text(
+                    '${dt.month}月${dt.day}日 周$weekday',
+                    style: t.typeScale.compact.copyWith(color: p.textMuted),
+                  ),
+                  SizedBox(height: t.metrics.space4),
+                ],
+              ),
+            ),
+            SizedBox(
+              height: 168,
+              child: widget.loading
+                  ? Center(
+                      child: Text(
+                        '读取中…',
+                        style: t.typeScale.micro.copyWith(color: p.textMuted),
                       ),
-          ),
-        ],
+                    )
+                  : (widget.events == null || widget.events!.isEmpty)
+                      ? Center(
+                          child: Text(
+                            '无日程',
+                            style: t.typeScale.micro.copyWith(color: p.textMuted),
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: t.metrics.space16,
+                            vertical: t.metrics.space4,
+                          ),
+                          itemCount: widget.events!.length,
+                          itemBuilder: (context, i) {
+                            final e = widget.events![i];
+                            return Padding(
+                              padding: EdgeInsets.symmetric(
+                                vertical: t.metrics.space4,
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  SizedBox(
+                                    width: 52,
+                                    child: Text(
+                                      e.timeText,
+                                      style: t.typeScale.micro
+                                          .copyWith(color: p.textMuted),
+                                    ),
+                                  ),
+                                  SizedBox(width: t.metrics.space8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: <Widget>[
+                                        Text(
+                                          e.title,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: t.typeScale.listItem,
+                                        ),
+                                        if (e.description != null &&
+                                            e.description!.isNotEmpty)
+                                          Text(
+                                            e.description!,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: t.typeScale.micro.copyWith(
+                                              color: p.textMuted,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+            ),
+          ],
+        ),
       ),
     );
   }

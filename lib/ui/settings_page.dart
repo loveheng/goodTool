@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 
 import '../action/command_gateway.dart';
 import '../action/settings_commands.dart';
+import '../mcp/calendar_provider.dart';
 import '../mcp/settings_keys.dart';
 import '../service/mcp_controller.dart';
+import '../ui_ports/calendar_feed_port.dart';
 import '../ui_ports/settings_port.dart';
 import '../ui_ports/status_port.dart';
 import 'components/app_components.dart';
@@ -22,10 +24,14 @@ class SettingsPage extends StatefulWidget {
     super.key,
     required this.port,
     required this.controller,
+    required this.statusPort,
+    required this.calendarFeedPort,
   });
 
   final SettingsPort port;
   final McpController controller;
+  final StatusPort statusPort;
+  final CalendarFeedPort calendarFeedPort;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -35,12 +41,23 @@ class _SettingsPageState extends State<SettingsPage> {
   final _amapKey = TextEditingController();
   final _qweatherKey = TextEditingController();
   final _qweatherHost = TextEditingController();
-  final _identity = TextEditingController();
+  final _feedUrl = TextEditingController();
+  final _feedName = TextEditingController();
 
   UserSettingsSnapshot? _snapshot;
   bool _loading = true;
 
-  /// 正在保存的键（provider/setting key/identity）——按项隔离，保存一项
+  /// 就绪矩阵（迁自仪表盘）：权限 / 配置探测。
+  late Future<List<ReadinessItem>> _readiness;
+
+  /// 订阅源列表（ICS；系统日历伪源已剔除）。
+  List<CalendarFeed> _feeds = const <CalendarFeed>[];
+  bool _feedsLoading = true;
+
+  /// 正在操作的订阅源 id（退订 / 刷新按项隔离禁用，不陪跑其它项）。
+  String? _feedBusy;
+
+  /// 正在保存的键（provider/setting key）——按项隔离，保存一项
   /// 只禁用该项按钮，其余配置不陪跑禁用（否则像「卡住了」）。
   String? _savingKey;
   String? _feedback;
@@ -50,6 +67,8 @@ class _SettingsPageState extends State<SettingsPage> {
   void initState() {
     super.initState();
     _load();
+    _loadFeeds();
+    _readiness = widget.statusPort.readiness();
   }
 
   @override
@@ -57,7 +76,8 @@ class _SettingsPageState extends State<SettingsPage> {
     _amapKey.dispose();
     _qweatherKey.dispose();
     _qweatherHost.dispose();
-    _identity.dispose();
+    _feedUrl.dispose();
+    _feedName.dispose();
     super.dispose();
   }
 
@@ -66,11 +86,96 @@ class _SettingsPageState extends State<SettingsPage> {
     if (!mounted) return;
     setState(() {
       _snapshot = snapshot;
-      _identity.text = snapshot.identityPrompt ?? '';
       // 非凭证明文键：可直接回显当前值（不掩码）。
       _qweatherHost.text = snapshot.plainValues[SettingsKeys.qweatherHost] ?? '';
       _loading = false;
     });
+  }
+
+  /// 载入 ICS 订阅列表（读经 [CalendarFeedPort] → Provider，R5 不直连 KV）。
+  Future<void> _loadFeeds() async {
+    setState(() => _feedsLoading = true);
+    final list = await widget.calendarFeedPort.listFeeds();
+    if (!mounted) return;
+    setState(() {
+      _feeds = list;
+      _feedsLoading = false;
+    });
+  }
+
+  /// 订阅一个 ICS 源：URL 预校验（空/非 https 在派发前给即时反馈，不浪费一次命令）。
+  Future<void> _subscribeFeed() async {
+    final url = _feedUrl.text.trim();
+    if (url.isEmpty) {
+      setState(() {
+        _feedback = '请输入 ICS 链接';
+        _feedbackIsError = true;
+      });
+      return;
+    }
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      setState(() {
+        _feedback = 'ICS 链接须以 http(s):// 开头';
+        _feedbackIsError = true;
+      });
+      return;
+    }
+    final name = _feedName.text.trim();
+    final result = await widget.calendarFeedPort.subscribe(
+      url: url,
+      name: name.isEmpty ? null : name,
+    );
+    if (!mounted) return;
+    _reportFeed(result);
+    if (result.ok) {
+      _feedUrl.clear();
+      _feedName.clear();
+      await _loadFeeds();
+    }
+  }
+
+  Future<void> _unsubscribeFeed(String feedId) async {
+    setState(() => _feedBusy = feedId);
+    final result = await widget.calendarFeedPort.unsubscribe(feedId);
+    if (!mounted) return;
+    setState(() => _feedBusy = null);
+    _reportFeed(result);
+    if (result.ok) await _loadFeeds();
+  }
+
+  Future<void> _refreshFeed(String? feedId) async {
+    setState(() => _feedBusy = feedId ?? 'all');
+    final result = await widget.calendarFeedPort.refresh(feedId);
+    if (!mounted) return;
+    setState(() => _feedBusy = null);
+    _reportFeed(result);
+    if (result.ok) await _loadFeeds();
+  }
+
+  /// 订阅类操作的反馈（只动反馈条，不改写设置快照——与 [_report] 职责分离）。
+  void _reportFeed(UserCommandResult result) {
+    if (!mounted) return;
+    setState(() {
+      if (result.ok) {
+        _feedback = '已保存';
+        _feedbackIsError = false;
+      } else {
+        _feedback = '${result.errorCode}：${result.message ?? ''}';
+        _feedbackIsError = true;
+        if (result.suggestion != null) {
+          _feedback = '$_feedback\n${result.suggestion}';
+        }
+      }
+    });
+  }
+
+  /// 刷新周期可读化（分钟 → 人话）。
+  static String _refreshMinLabel(int min) {
+    if (min <= 0) return '仅手动刷新';
+    if (min < 60) return '每 $min 分钟';
+    final h = min / 60;
+    if (h == h.roundToDouble()) return '每 ${h.round()} 小时';
+    return '每 $min 分钟';
   }
 
   void _report(UserCommandResult result) {
@@ -117,12 +222,9 @@ class _SettingsPageState extends State<SettingsPage> {
     _report(result);
   }
 
-  Future<void> _saveIdentity() async {
-    setState(() => _savingKey = 'identity');
-    final result = await widget.port.setIdentityProfile(_identity.text);
-    if (!mounted) return;
-    setState(() => _savingKey = null);
-    _report(result);
+  /// 重新探测就绪矩阵（迁自仪表盘）。
+  void _refreshReadiness() {
+    setState(() => _readiness = widget.statusPort.readiness());
   }
 
   /// 隐藏入口：长按「关于」进 MCP 调试服务控制页。
@@ -142,6 +244,54 @@ class _SettingsPageState extends State<SettingsPage> {
           _FeedbackBanner(message: _feedback!, isError: _feedbackIsError),
           SizedBox(height: t.metrics.space16),
         ],
+        // 权限 / 配置就绪矩阵（迁自仪表盘）：与配置项同页，改完即验。
+        SectionCard(
+          title: '权限与配置',
+          trailing: IconButton(
+            onPressed: _refreshReadiness,
+            icon: const Icon(Icons.refresh),
+            tooltip: '重新检测',
+          ),
+          child: FutureBuilder<List<ReadinessItem>>(
+            future: _readiness,
+            builder: (context, snap) {
+              if (snap.connectionState != ConnectionState.done) {
+                return Text('检测中…', style: t.typeScale.body);
+              }
+              if (snap.hasError) {
+                return Text(
+                  '检测失败：${snap.error}',
+                  style: t.typeScale.body.copyWith(color: t.palette.danger),
+                );
+              }
+              final items = snap.data ?? const <ReadinessItem>[];
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Wrap(
+                    spacing: t.metrics.space8,
+                    runSpacing: t.metrics.space8,
+                    children: <Widget>[
+                      for (final item in items) ReadinessPill(item: item),
+                    ],
+                  ),
+                  SizedBox(height: t.metrics.space8),
+                  for (final item in items)
+                    if (item.detail != null)
+                      Padding(
+                        padding: EdgeInsets.only(top: t.metrics.space4),
+                        child: Text(
+                          '${item.label}：${item.detail}',
+                          style: t.typeScale.micro
+                              .copyWith(color: t.palette.textMuted),
+                        ),
+                      ),
+                ],
+              );
+            },
+          ),
+        ),
+        SizedBox(height: t.metrics.space16),
         // MCP HTTP 调试服务控制收进隐藏页（2026-10-20 产品决策：不随启动自启，
         // 仅 adb 直连）——设置页只留「关于」长按入口，控制面不暴露在日常视线里。
         _AboutCard(onOpenService: _openServicePage),
@@ -216,27 +366,73 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ),
         SizedBox(height: t.metrics.space16),
+        // ICS 订阅源管理（用户本人自决；AI 不可经工具面触达，信任模型）：
+        // 增删经网关用户侧注册表（R1），列表读经 Provider（R5）。
         SectionCard(
-          title: '身份画像',
+          title: '日历订阅源（ICS）',
+          trailing: _feeds.isNotEmpty
+              ? TextButton(
+                  onPressed:
+                      _feedBusy == null ? () => _refreshFeed(null) : null,
+                  child: Text(
+                    _feedBusy == 'all' ? '刷新中…' : '刷新全部',
+                    style: t.typeScale.compact,
+                  ),
+                )
+              : null,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Text(
-                '供外部 Agent 在排程 / 建议时参考你的处境；仅你本人可写，Agent 无权写入。',
-                style: t.typeScale.compact,
+                '订阅在线日历（.ics 链接，如 Google / 苹果日历导出）；'
+                '名称含「节假日」的源会自动驱动法定节假日标记。',
+                style: t.typeScale.micro
+                    .copyWith(color: t.palette.textMuted),
               ),
               SizedBox(height: t.metrics.space8),
+              if (_feedsLoading)
+                Text('读取订阅中…', style: t.typeScale.body)
+              else if (_feeds.isEmpty)
+                Text(
+                  '尚未订阅任何 ICS 源',
+                  style: t.typeScale.micro
+                      .copyWith(color: t.palette.textMuted),
+                )
+              else
+                for (final f in _feeds)
+                  _FeedRow(
+                    feed: f,
+                    busy: _feedBusy == f.id,
+                    onRefresh: _feedBusy == null
+                        ? () => _refreshFeed(f.id)
+                        : null,
+                    onUnsubscribe: _feedBusy == null
+                        ? () => _unsubscribeFeed(f.id)
+                        : null,
+                  ),
+              SizedBox(height: t.metrics.space12),
               TextField(
-                controller: _identity,
-                maxLines: 4,
+                controller: _feedUrl,
                 decoration: const InputDecoration(
-                  labelText: '身份画像（可留空）',
+                  labelText: 'ICS 链接（http(s)://）',
                 ),
               ),
               SizedBox(height: t.metrics.space8),
-              FilledButton(
-                onPressed: _savingKey == 'identity' ? null : _saveIdentity,
-                child: const Text('保存'),
+              TextField(
+                controller: _feedName,
+                decoration: const InputDecoration(
+                  labelText: '名称（可选，默认取域名）',
+                ),
+              ),
+              SizedBox(height: t.metrics.space8),
+              Wrap(
+                spacing: t.metrics.space8,
+                children: <Widget>[
+                  FilledButton(
+                    onPressed: _subscribeFeed,
+                    child: const Text('订阅'),
+                  ),
+                ],
               ),
             ],
           ),
@@ -493,6 +689,73 @@ class _SwitchRow extends StatelessWidget {
         ),
         Switch(value: value, onChanged: onChanged),
       ],
+    );
+  }
+}
+
+/// 单条 ICS 订阅源行：状态点 + 名称 + 链接主机 + 刷新周期 + 刷新/退订。
+class _FeedRow extends StatelessWidget {
+  const _FeedRow({
+    required this.feed,
+    required this.busy,
+    required this.onRefresh,
+    required this.onUnsubscribe,
+  });
+
+  final CalendarFeed feed;
+  final bool busy;
+  final VoidCallback? onRefresh;
+  final VoidCallback? onUnsubscribe;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = tokensOf(context);
+    final p = t.palette;
+    final host = Uri.tryParse(feed.url)?.host ?? feed.url;
+    return Padding(
+      padding: EdgeInsets.only(bottom: t.metrics.space8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              StatusDot(
+                state: feed.status == 'ok'
+                    ? ReadinessState.ready
+                    : ReadinessState.missing,
+              ),
+              SizedBox(width: t.metrics.space4),
+              Expanded(
+                child: Text(feed.name, style: t.typeScale.listItem),
+              ),
+              if (busy)
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else ...<Widget>[
+                TextButton(
+                  onPressed: onRefresh,
+                  child: Text('刷新', style: t.typeScale.compact),
+                ),
+                TextButton(
+                  onPressed: onUnsubscribe,
+                  child: Text('退订', style: t.typeScale.compact),
+                ),
+              ],
+            ],
+          ),
+          Padding(
+            padding: EdgeInsets.only(left: 18),
+            child: Text(
+              '$host · ${_SettingsPageState._refreshMinLabel(feed.refreshMin)}'
+              '${feed.lastSyncTime != null ? ' · 上次 ${feed.lastSyncTime}' : ''}',
+              style: t.typeScale.micro.copyWith(color: p.textMuted),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

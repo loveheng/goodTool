@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 凭证密文与密钥不同源（密钥在 AndroidKeyStore，永不出设备）：
+     任何备份/换机迁移过来的密文都无法解密——与其迁废数据致读路径
+     AEADBadTagException 砖死设置页，不如整体禁备份（含设备到设备迁移）。 -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="." />
+    </device-transfer>
+</data-extraction-rules>

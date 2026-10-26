@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-10-24
+updated: 2026-10-26
 ---
 
 # goodTemplate · 模板抽取与同步
@@ -43,3 +43,8 @@ updated: 2026-10-24
 
 - `arch-guard.sh` 随清单同步（R1–R7 全集）；模板无 UI 层，R1/R2/R5 天然满足。
 - 装配纪律与 goodTools 同构：工具面单点收口 `tool_face_assembly.dart`，HTTP 调试通道与 Binder 生产通道**共用同一份装配**。
+
+## 7. 决策日志
+- [2026-10-24] [UI 基座切分]: 原 UI 设计基座五件（含主题骨架 theme/app_theme_data + main 主题接线）随模板起底 ➔ 新**功能组件闭包三件**入模板（app_tokens / app_components / block_canvas）；主题骨架**不入**——用户拍板：模板不约束新 app 页面设计；组件视觉值经 AppTokens 主题扩展由**宿主注册**（宿主可自定义 token 实例换观感）
+- [2026-10-24] [元组件口径]: 用户拍板「只要元组件，拼装成品不收」——只收不可再分的积木；readiness 双件拆分：StatusDot/ReadinessPill 元组件 + ReadinessState/ReadinessItem 元类型上移 `lib/ui_ports/readiness.dart` 中性件（纯 Dart 无 Flutter；status_port 经 import+export 保持原路径兼容）
+- [2026-10-24] [内核配套页]: mcp_service_page 迁入模板——用户拍板「MCP 服务本身是内部调试设施，每个 app 都有」：该页只吃 McpController + 元组件，宿主注入 controller，不携带视觉范式，从「拼装成品不迁」清单移入「内核配套页随内核走」类

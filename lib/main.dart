@@ -25,6 +25,7 @@ import 'repository/marker_repository.dart';
 import 'repository/settings_repository.dart';
 import 'service/amap_http_provider.dart';
 import 'service/composite_calendar_provider.dart';
+import 'service/calendar_actors.dart';
 import 'service/favorite_place_store.dart';
 import 'service/geo_favorite_actors.dart';
 import 'service/geo_last_location_actor.dart';
@@ -53,6 +54,7 @@ import 'ui/theme.dart';
 import 'ui/weather_page.dart';
 import 'ui_ports/calculator_port.dart';
 import 'ui_ports/calendar_port.dart';
+import 'ui_ports/calendar_feed_port.dart';
 import 'ui_ports/draft_port.dart';
 import 'ui_ports/geo_lbs_port.dart';
 import 'ui_ports/geo_last_location_port.dart';
@@ -168,6 +170,9 @@ class _BootPageState extends State<_BootPage> {
       store: weatherCityStore,
       writer: weatherCityStore,
     ).register(gateway);
+    // 日历 ICS 订阅用户侧 Actor（App 设置页直接管理，AI 不可触达）：与 AI 侧 W 档
+    // 同一套写逻辑、同一网关实例上的用户侧注册表（信任模型 + R1/R2）。
+    registerCalendarUserActors(gateway, kv: kv, feeds: feeds);
 
     // ④ 工具面：与 Binder 生产通道共用同一装配（standards §3.3 S7 纪律）。
     // 天气源与工具面**共用同一 QWeatherProvider 实例**——否则 UI 与 Agent 各拉
@@ -221,6 +226,7 @@ class _BootPageState extends State<_BootPage> {
       locationSensor: locationSensor,
       favoriteRepository: FavoriteRepository(store: favoriteStore),
       weatherCityRepository: WeatherCityRepository(store: weatherCityStore),
+      calendarFeedPort: CalendarFeedPort(gateway, feeds),
       calendarPort: CalendarPort(
         feeds: feeds,
         markers: MarkerRepository(store: markerStore),
@@ -246,30 +252,35 @@ class _BootPageState extends State<_BootPage> {
         ),
       );
     }
-    return HomeShell(
-      dashboard: DashboardPage(port: scope.statusPort),
-      capabilities: CapabilitiesPage(
-        pages: <AppDomain, Widget>{
-          AppDomain.calculator: CalculatorPage(port: scope.draftPort),
-          AppDomain.geo: GeoPage(
-            lbsPort: scope.geoLbsPort,
-            favorites: scope.favoriteRepository,
-            gateway: scope.gateway,
-            locationSensor: scope.locationSensor,
-            lastLocation: scope.lastLocationPort,
-            weatherPort: scope.weatherPort,
-          ),
-          AppDomain.calendar: CalendarPage(port: scope.calendarPort),
-          AppDomain.weather: WeatherPage(
-            port: scope.weatherPort,
-            cities: scope.weatherCityRepository,
-            gateway: scope.gateway,
-          ),
-        },
+    // 域子页面实例由能力 hub 与首页快捷**共用同一份**（两入口不各持一套状态）。
+    final domainPages = <AppDomain, Widget>{
+      AppDomain.calculator: CalculatorPage(port: scope.draftPort),
+      AppDomain.geo: GeoPage(
+        lbsPort: scope.geoLbsPort,
+        favorites: scope.favoriteRepository,
+        gateway: scope.gateway,
+        locationSensor: scope.locationSensor,
+        lastLocation: scope.lastLocationPort,
+        weatherPort: scope.weatherPort,
       ),
-      settings: SettingsPage(
+      AppDomain.calendar: CalendarPage(port: scope.calendarPort),
+      AppDomain.weather: WeatherPage(
+        port: scope.weatherPort,
+        cities: scope.weatherCityRepository,
+        gateway: scope.gateway,
+      ),
+    };
+    return HomeShell(
+      dashboard: DashboardPage(port: scope.settingsPort, pages: domainPages),
+      capabilities: CapabilitiesPage(
+        port: scope.settingsPort,
+        pages: domainPages,
+      ),
+      settings:     SettingsPage(
         port: scope.settingsPort,
         controller: scope.controller,
+        statusPort: scope.statusPort,
+        calendarFeedPort: scope.calendarFeedPort,
       ),
     );
   }
@@ -290,6 +301,7 @@ class _AppScope {
     required this.locationSensor,
     required this.favoriteRepository,
     required this.weatherCityRepository,
+    required this.calendarFeedPort,
     required this.calendarPort,
     required this.weatherPort,
     required this.gateway,
@@ -315,6 +327,7 @@ class _AppScope {
 
   /// 天气多城市只读聚合（R5；增删经 [gateway] 用户侧注册表）。
   final WeatherCityRepository weatherCityRepository;
+  final CalendarFeedPort calendarFeedPort;
   final CalendarPort calendarPort;
   final WeatherPort weatherPort;
 

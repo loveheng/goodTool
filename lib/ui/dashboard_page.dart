@@ -2,158 +2,55 @@ library;
 
 import 'package:flutter/material.dart';
 
-import '../ui_ports/status_port.dart';
+import '../ui_ports/settings_port.dart';
+import 'capabilities_page.dart';
 import 'components/app_components.dart';
-import 'components/readiness_components.dart';
 
-/// 仪表盘：服务状态 + 权限就绪矩阵 + 实时调用流水。
+/// 仪表盘：**首页本体 = 钉住域的二级页面**（产品决策 2026-10-26：不留快捷卡
+/// 中间层，整个首页为钉住的页面服务——去掉「卡片 → 进入」一步）。
 ///
-/// 数据全部来自**类型化**适配层（`lib/ui_ports`）——本页不 import `lib/mcp/**`
-/// 的传输类型、不消费 `{content,isError}` 文本信封（守 R2 / R4）。
+/// 钉选在能力页（单选图钉，默认日历）；本页只读钉住域并渲染对应子页面，
+/// **与能力 hub 共用同一份子页面实例**（main.dart 单点装配）。
 class DashboardPage extends StatefulWidget {
-  const DashboardPage({super.key, required this.port});
+  const DashboardPage({super.key, required this.port, required this.pages});
 
-  final StatusPort port;
+  final SettingsPort port;
+
+  /// 域 → 已装配的子页面实例（与能力 hub 同一份，main.dart 共享）。
+  final Map<AppDomain, Widget> pages;
 
   @override
   State<DashboardPage> createState() => _DashboardPageState();
 }
 
 class _DashboardPageState extends State<DashboardPage> {
-  late Future<List<ReadinessItem>> _readiness;
-
-  /// 累积后的调用流水（**建一次**——若在 build 里新建流，每次重建都重订阅、
-  /// 累积缓冲被清空，列表只剩最后一条）。
-  late final Stream<List<CallEventView>> _events;
+  String? _pinned;
+  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    _readiness = widget.port.readiness();
-    _events = _accumulate(widget.port.callEvents);
+    _load();
   }
 
-  /// 把逐条事件累积成「最近 N 条」列表。
-  static Stream<List<CallEventView>> _accumulate(
-    Stream<CallEventView> source,
-  ) {
-    final buffer = <CallEventView>[];
-    return source.map((e) {
-      buffer.add(e);
-      if (buffer.length > 50) buffer.removeAt(0);
-      return List<CallEventView>.unmodifiable(buffer);
+  Future<void> _load() async {
+    final snapshot = await widget.port.read();
+    if (!mounted) return;
+    setState(() {
+      _pinned = snapshot.homePinnedDomain;
+      _loading = false;
     });
-  }
-
-  Future<void> _refresh() async {
-    final next = widget.port.readiness();
-    setState(() => _readiness = next);
   }
 
   @override
   Widget build(BuildContext context) {
-    final t = tokensOf(context);
-    return ListView(
-      padding: EdgeInsets.all(t.metrics.space16),
-      children: <Widget>[
-        SectionCard(
-          title: '权限与配置',
-          trailing: IconButton(
-            onPressed: _refresh,
-            icon: const Icon(Icons.refresh),
-            tooltip: '重新检测',
-          ),
-          child: FutureBuilder<List<ReadinessItem>>(
-            future: _readiness,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState != ConnectionState.done) {
-                return Text('检测中…', style: t.typeScale.body);
-              }
-              if (snapshot.hasError) {
-                return Text(
-                  '检测失败：${snapshot.error}',
-                  style: t.typeScale.body.copyWith(color: t.palette.danger),
-                );
-              }
-              final items = snapshot.data ?? const <ReadinessItem>[];
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Wrap(
-                    spacing: t.metrics.space8,
-                    runSpacing: t.metrics.space8,
-                    children: <Widget>[
-                      for (final item in items) ReadinessPill(item: item),
-                    ],
-                  ),
-                  SizedBox(height: t.metrics.space8),
-                  for (final item in items)
-                    if (item.detail != null)
-                      Padding(
-                        padding: EdgeInsets.only(top: t.metrics.space4),
-                        child: Text(
-                          '${item.label}：${item.detail}',
-                          style: t.typeScale.micro
-                              .copyWith(color: t.palette.textMuted),
-                        ),
-                      ),
-                ],
-              );
-            },
-          ),
-        ),
-        SizedBox(height: t.metrics.space16),
-        SectionCard(
-          title: '实时调用流水',
-          child: SizedBox(
-            height: 260,
-            child: StreamBuilder<List<CallEventView>>(
-              stream: _events,
-              builder: (context, snapshot) {
-                final events = snapshot.data ?? const <CallEventView>[];
-                if (events.isEmpty) {
-                  return const EmptyState(
-                    message: '暂无调用记录',
-                    detail: '外部 Agent 经 MCP 调用工具时，调用流水会实时出现在这里',
-                  );
-                }
-                final rows = events.reversed.take(50).toList(growable: false);
-                return ListView.separated(
-                  itemCount: rows.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 4),
-                  itemBuilder: (context, index) {
-                    final e = rows[index];
-                    return Row(
-                      children: <Widget>[
-                        SizedBox(
-                          width: 72,
-                          child: Text(e.timeText, style: t.typeScale.telemetry),
-                        ),
-                        Expanded(
-                          child: Text(
-                            e.name,
-                            style: t.typeScale.telemetry,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        SizedBox(width: t.metrics.space8),
-                        Text(
-                          '${e.elapsedMs}ms',
-                          style: t.typeScale.telemetry.copyWith(
-                            color: e.ok ? t.palette.l1Ok : t.palette.danger,
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ),
-      ],
-    );
+    if (_loading) {
+      final t = tokensOf(context);
+      return Center(child: Text('加载中…', style: t.typeScale.body));
+    }
+    // 子页面原样渲染：calendar / geo 自带 Scaffold；calculator / weather 为裸件，
+    // Material 祖先由 HomeShell 的 Scaffold 提供（push 红屏问题在此不成立）；
+    // 不再包标题栏——首页为这页服务。
+    return widget.pages[resolvePinnedDomain(_pinned)]!;
   }
 }
-
-

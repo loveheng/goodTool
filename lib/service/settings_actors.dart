@@ -25,6 +25,7 @@ class SettingsActors {
     gateway.registerUser('user_set_identity_profile', setIdentityProfile);
     gateway.registerUser('user_set_setting', setSetting);
     gateway.registerUser('user_save_draft', saveDraft);
+    gateway.registerUser('user_set_home_pinned_domain', setHomePinnedDomain);
   }
 
   /// 保存计算器草稿台内容（UI 会话态持久化，非设置项）。
@@ -46,6 +47,31 @@ class SettingsActors {
       'saved': true,
       'lines': content.split('\n').length,
     });
+  }
+
+  /// 设置首页快捷方式钉住的域（值 = `AppDomain` 枚举名）。
+  ///
+  /// 能力页是唯一写入口（用户本人自决）；写后回最新快照（standards §5.2）。
+  Future<UserCommandResult> setHomePinnedDomain(Command cmd) async {
+    final domain = cmd.payload['domain'];
+    if (domain is! String || domain.trim().isEmpty) {
+      return UserCommandResult.failure(
+        'MISSING_ARGUMENT',
+        '缺少 domain',
+        suggestion: 'domain 取 AppDomain 枚举名',
+      );
+    }
+    final name = domain.trim();
+    if (!_homePinnedDomains.contains(name)) {
+      return UserCommandResult.failure(
+        'INVALID_ARGUMENT',
+        '未知域：$name',
+        suggestion: '可选域：${_homePinnedDomains.join(' / ')}',
+      );
+    }
+    await repository.kv
+        .settingsSet(<String, String>{SettingsKeys.homePinnedDomain: name});
+    return UserCommandResult.success(await repository.readSnapshot());
   }
 
   /// 设置后端 API Key：provider ∈ {`amap`, `qweather`}。
@@ -161,3 +187,7 @@ class SettingsActors {
     return UserCommandResult.success(await repository.readSnapshot());
   }
 }
+
+/// 首页快捷钉选的合法域集（= `AppDomain` 枚举名，与 UI 侧一致性由
+/// `ui_console_test.dart` 锁定；未设置时的渲染层默认域属 UI 口径，不在此）。
+const _homePinnedDomains = <String>['calculator', 'calendar', 'geo', 'weather'];

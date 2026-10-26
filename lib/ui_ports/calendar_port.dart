@@ -10,9 +10,9 @@ import '../tools/calendar/lunar_math.dart';
 /// 日历单日「离线事实」（不依赖系统日历权限）：农历 / 节气 / 法定节假日。
 ///
 /// 农历/节气来自纯内核 [LunarMath]（离线）；法定节假日来自注入的 [HolidayProvider]
-/// ——默认空表，由装配注入 ICS 驱动的 [IcsHolidayProvider]（订阅名称含『节假日』
-/// 的 ICS 源）。未订阅节假日源时 [holidayName] 为 null、[kind] 回落 normal——前端
-/// 须按此降级，不可把"无节假日"误判为"异常"。
+/// ——默认空表，由装配注入 ICS 驱动的 [IcsHolidayProvider]（扫描所有订阅 ICS，按
+/// 事件标题内容识别休/班，不再要求源名称含『节假日』）。未订阅时 [holidayName]
+/// 为 null、[kind] 回落 normal——前端须按此降级，不可把"无节假日"误判为"异常"。
 enum DayKind { normal, holiday, workday }
 
 class DayFacts {
@@ -21,6 +21,7 @@ class DayFacts {
     this.solarTerm = '',
     this.holidayName,
     this.kind = DayKind.normal,
+    this.description,
   });
 
   /// 农历角标（'八月' / '十五'）；逢节气日则为节气名（更值得看）。
@@ -35,6 +36,9 @@ class DayFacts {
   /// 日性质：法定假 / 调休补班 / 普通。
   final DayKind kind;
 
+  /// 订阅节假日 ICS 的补充说明（DESCRIPTION）；无则为 null。
+  final String? description;
+
   bool get isHoliday => kind == DayKind.holiday;
   bool get isWorkday => kind == DayKind.workday;
 }
@@ -48,6 +52,7 @@ class EventView {
     required this.isAllDay,
     required this.source,
     this.location,
+    this.description,
   });
 
   final String title;
@@ -59,6 +64,9 @@ class EventView {
   final String source;
 
   final String? location;
+
+  /// 事件补充说明（ICS DESCRIPTION / 系统日历描述）；无则为 null。
+  final String? description;
 
   /// 展示用时间串（全天 → 「全天」；否则取 start 的时刻部分）。
   String get timeText {
@@ -197,7 +205,8 @@ class CalendarPort {
   final MarkerRepository markers;
 
   /// 法定节假日来源：默认空表，由装配注入 ICS 驱动的 [IcsHolidayProvider]
-  /// （订阅名称含『节假日』的 ICS 源）；未订阅时回落空表（不编造放假/补班）。
+  /// （扫描所有订阅 ICS、按标题内容识别休/班，不再要求源名含『节假日』）；
+  /// 未订阅时回落空表（不编造放假/补班）。
   final HolidayProvider holidays;
 
   /// 运行时权限申请端口（平台细节收敛处，守 R3）。
@@ -233,6 +242,7 @@ class CalendarPort {
       solarTerm: lunar.solarTerm,
       holidayName: entry.name,
       kind: kind,
+      description: entry.description,
     );
   }
 
@@ -442,6 +452,7 @@ class CalendarPort {
         isAllDay: e.isAllDay,
         source: e.source,
         location: e.location,
+        description: e.description,
       );
 
   static MarkerView _toMarkerView(CalendarMarker m) => MarkerView(

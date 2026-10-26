@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import android.util.Log
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -41,6 +42,8 @@ import javax.crypto.spec.GCMParameterSpec
  * MissingPluginException（Dart 侧转 SecretStoreErr.unavailable）。
  */
 object SecretStoreChannel {
+    private const val TAG = "SecretStoreChannel"
+
     const val NAME = "com.goodhub.goodtools/secret_store"
 
     /** Keystore 别名。换别名 = 旧密文全部不可解密，仅重大密钥策略迁移时升版。 */
@@ -71,7 +74,14 @@ object SecretStoreChannel {
         }
     }
 
-    /** 读凭证：不存在回 null（端口语义），密文损坏抛 KEYSTORE_ERROR（fail-closed）。 */
+    /**
+     * 读凭证：不存在回 null（端口语义）。
+     *
+     * 解密失败（密钥失配/密文损坏）= 该条目**永久不可恢复**（Keystore 密钥不出
+     * 设备，密文却可能被备份还原/换机迁移过来）——此时自愈：删除坏条目回 null，
+     * 用户重填 Key 即恢复；否则快照路径永久炸、设置页砖死。
+     * 其余故障（IO 等）仍 fail-closed 转 KEYSTORE_ERROR。
+     */
     private fun handleRead(ctx: Context, call: MethodCall, result: MethodChannel.Result) {
         val key = call.argument<String>("key") ?: run {
             result.error("INVALID_ARGUMENT", "read 缺 key 参数", null)
@@ -86,7 +96,15 @@ object SecretStoreChannel {
                     }
                 result.success(decrypt(encoded))
             } catch (e: Exception) {
-                result.error("KEYSTORE_ERROR", "凭证读取失败：${e.message}", null)
+                try {
+                    secretPrefs(ctx).edit().remove(key).commit()
+                    Log.w(TAG, "凭证解密失败，已清除坏条目待重配：key=$key", e)
+                    result.success(null)
+                } catch (cleanup: Exception) {
+                    result.error(
+                        "KEYSTORE_ERROR", "凭证读取失败：${e.message}", null
+                    )
+                }
             }
         }.start()
     }

@@ -49,6 +49,13 @@ class UserSaveDraftCommand extends Command {
       : super('user_save_draft', payload);
 }
 
+/// 设置首页快捷方式钉住的域（载荷 `{'domain': string}`；值 = `AppDomain`
+/// 枚举名，四域 calculator / calendar / geo / weather；校验在 Actor，UI 不自验）。
+class UserSetHomePinnedDomainCommand extends Command {
+  const UserSetHomePinnedDomainCommand(Map<String, Object?> payload)
+      : super('user_set_home_pinned_domain', payload);
+}
+
 /// 用户设置快照（写后回最新状态，standards §5.2；对齐读工具同形状）。
 ///
 /// **凭证零明文留痕**（standards §6.1）：凭证类键只回显「是否已配置」与掩码尾号，
@@ -60,6 +67,7 @@ class UserSettingsSnapshot {
     required this.switches,
     required this.plainValues,
     required this.identityPrompt,
+    required this.homePinnedDomain,
   });
 
   /// 凭证类键 → 是否已配置。
@@ -76,6 +84,9 @@ class UserSettingsSnapshot {
 
   /// 用户身份画像原文（用户自述，非凭证）。
   final String? identityPrompt;
+
+  /// 首页快捷方式钉住的域（`AppDomain` 枚举名；null = 未设置，渲染层回落默认域）。
+  final String? homePinnedDomain;
 
   /// 某个凭证是否已配置。
   bool isConfigured(String key) => credentialConfigured[key] ?? false;

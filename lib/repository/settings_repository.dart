@@ -49,6 +49,7 @@ class SettingsRepository {
     }
 
     final identity = await kv.settingsGet(SettingsKeys.identityPrompt);
+    final homePinned = await kv.settingsGet(SettingsKeys.homePinnedDomain);
     return UserSettingsSnapshot(
       credentialConfigured: configured,
       credentialMasked: masked,
@@ -57,6 +58,10 @@ class SettingsRepository {
       identityPrompt: (identity != null && identity.trim().isNotEmpty)
           ? identity.trim()
           : null,
+      homePinnedDomain:
+          (homePinned != null && homePinned.trim().isNotEmpty)
+              ? homePinned.trim()
+              : null,
     );
   }
 }

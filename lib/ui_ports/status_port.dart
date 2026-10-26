@@ -2,7 +2,6 @@ library;
 
 import '../mcp/calendar_provider.dart';
 import '../mcp/geo_provider.dart';
-import '../mcp/mcp_server.dart';
 import '../mcp/settings_keys.dart';
 import '../repository/settings_repository.dart';
 import '../service/mcp_controller.dart';
@@ -30,29 +29,8 @@ class ServiceStatusView {
   final String? lastError;
 }
 
-/// 实时调用事件视图（内核 `McpCallEvent` → UI 视图模型）。
-class CallEventView {
-  const CallEventView({
-    required this.name,
-    required this.ts,
-    required this.elapsedMs,
-    required this.ok,
-  });
-
-  final String name;
-  final int ts;
-  final int elapsedMs;
-  final bool ok;
-
-  /// 时间戳格式化（本地 `HH:mm:ss`，遥测轨等宽渲染）。
-  String get timeText {
-    final d = DateTime.fromMillisecondsSinceEpoch(ts);
-    String two(int v) => v.toString().padLeft(2, '0');
-    return '${two(d.hour)}:${two(d.minute)}:${two(d.second)}';
-  }
-}
-
-/// 仪表盘适配层：服务状态 + 权限/配置就绪矩阵 + 实时调用流。
+/// 状态适配层：服务状态快照 + 权限/配置就绪矩阵（消费方=设置页；
+/// 实时调用流水随产品决策移除，UI 不再消费调用事件）。
 class StatusPort {
   const StatusPort({
     required this.controller,
@@ -77,17 +55,6 @@ class StatusPort {
         endpoint: controller.endpoint,
         hasToken: (controller.token ?? '').isNotEmpty,
         lastError: controller.lastError,
-      );
-
-  /// 实时调用流（类型化；内核侧吐事件，UI 侧 `StreamBuilder` 接）。
-  Stream<CallEventView> get callEvents =>
-      controller.callEvents.map(_toView);
-
-  static CallEventView _toView(McpCallEvent e) => CallEventView(
-        name: e.name,
-        ts: e.ts,
-        elapsedMs: e.elapsedMs,
-        ok: e.ok,
       );
 
   /// 权限 / 配置就绪矩阵。

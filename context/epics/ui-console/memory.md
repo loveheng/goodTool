@@ -41,7 +41,7 @@ last-merge: 2026-10-21
 - 2026-10-20~21 **Binder/交付链收束**（决策原文归档 ui-console.md 决策日志 [Binder接入]/[产品决策]/[交接]）：goodhub-mcp-sdk 拆仓接入（McpBinderService 继承 GoodHubPluginService、minSdk 34）；MCP HTTP 服务改手动开启（隐藏服务页）；UI 修复组：SectionCard InkWell 缺 Material 祖先、二级页 push 红屏（Flutter 3.47 MaterialPageRoute 不再包 Material）、AIDL buildFeatures 缺失（AGP 9.1 默认关）、Binder entrypoint kernel 缺库（main.dart import 使库进 kernel 闭包）。剩余唯一真前端事项 = U15 真机 e2e（含 Binder 联调；GLM 系待 goodhub 注入 tool_stream 后复验，step-3.7-flash 可先验）
 
 ## 断点
-- [断点] 下一步：U15 真机 e2e：用支持函数调用的模型（step-3.7-flash 实测 100% 有名调用）验收 goodhub→Binder→goodtools__{math_utility,geo,weather,system_pim} 四工具调用链；GLM 系模型待 goodhub 注入 tool_stream 参数后复验
+- [断点] 下一步：U15 真机 e2e（含首页走查：首页直接内嵌钉住域二级页 + 能力页钉选切换 + 重启持久化；goodhub→Binder 四工具链验收；GLM 系待 goodhub 注入 tool_stream 后复验）
 - **U15 真机侧载核对**（ui-console.md §6 视觉验收项 + Binder e2e）：环境无模拟器，唯一途径，需用户装 debug 包走查四域子页面/权限引导/天气引导/Keystore 凭证持久化（重启不丢 + Binder 通道可见）+ 宿主 Binder 联调。
 - 「拾光排程师」文案残留：待产品定位拍板（`domain_gateway` 域待办，不属本 epic）。
 - **历史查证（已结项）**：goodhub 宿主侧私有注册——goodTools 插件端曾漏声明 `<permission>` 且宿主缺 `<queries>`，两仓 Manifest 已补 `<permission protectionLevel="signature">` + 宿主 `<queries>` 该 action；`thirdconnect.md` 契约文档在 goodTools 仓内仍缺失（仅被引用），待补回或登记避免信息丢失。
