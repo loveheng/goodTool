@@ -24,7 +24,7 @@ last-merge: 2026-10-27
 - 2026-10-27 **真机手感过关 + 年视图恢复**（SSOT 修正 Ref: ui-console.md 决策日志 2026-10-27 [SSOT 修正]）：自由滚动手感真机过关；年条带以月条带同构无限滚动条回归（纵滑跨年惯性 + ±2 预挂载），入口双通道 = 双指捏合（Listener 原始指针检测，不进手势竞技场）+ 点标题；点迷你月落月；**Stack+Offstage 双条带常驻**（AnimatedSwitcher 重挂载子树会丢条带位置 + glide 撞未挂载 controller）；**年条带独立 _yearPageHeight**（年/月视口高不同，共用页高致两页同屏）；test 基线 **632**。
 
 ## 断点
-- [断点] 下一步：FAB 全屏三层修复已落地（unbounded 控制器 + LayoutBuilder 极端挤压让位 + FittedBox 兜底 + 48px 呼吸条），新增 FAB 全屏链路回归钉，analyze/test 635/arch-guard 全过，待真机复验全屏交互；U15 真机 e2e 与发版（bump-version → release-r2）仍挂
+- [断点] 下一步：v0.1.4(38) 已发版（commit ef90ac5 → release-r2 上传 R2，清单 app-38.apk 线上已校验 200；旧 app-37.apk 已清理）；FAB 全屏三层修复已落地（unbounded 控制器 + LayoutBuilder 极端挤压让位 + FittedBox 兜底 + 48px 呼吸条），analyze/test 635/arch-guard 全过；**U15 真机 e2e 仍挂**——待真机装包复验全屏交互、四域子页面、权限/天气引导、Keystore 凭证持久化与 Binder 通道
 - **U15 真机侧载核对**（ui-console.md §6 视觉验收项 + Binder e2e）：环境无模拟器，需用户装包走查四域子页面 / 权限引导 / 天气引导 / Keystore 凭证持久化（重启不丢 + Binder 通道可见）+ 宿主 Binder 联调（GLM 系待 goodhub 注入 tool_stream 后复验，step-3.7-flash 可先验）。
 - 「拾光排程师」文案残留：待产品定位拍板（`domain_gateway` 域待办，不属本 epic）。
 - `thirdconnect.md` 契约文档在 goodTools 仓内仍缺失（仅被引用），待补回或登记避免信息丢失。
