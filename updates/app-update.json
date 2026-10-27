@@ -1,8 +1,8 @@
 {
-  "versionCode": 37,
-  "versionName": "0.1.3",
+  "versionCode": 38,
+  "versionName": "0.1.4",
   "applicationId": "com.goodhub.goodtools",
-  "apkUrl": "https://r2.oklhj.eu.org/updates/goodtools/app-37.apk",
-  "sha256": "98998a23da07bf9db92996622f2a3e2091d81e89c6b1ad8c1c8bf12f711964ac",
-  "changelog": "chore: release v0.1.2 (36)"
+  "apkUrl": "https://r2.oklhj.eu.org/updates/goodtools/app-38.apk",
+  "sha256": "c7921fe22344ef2484e479c829de18a66f63f72c7388c0fdcd91de31ce5a4eb5",
+  "changelog": "feat(calendar): 日历手势/面板交互打磨 + 图标与应用名（v0.1.4+38）"
 }
