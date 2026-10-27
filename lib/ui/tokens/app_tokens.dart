@@ -370,6 +370,7 @@ class AppMetrics {
     required this.emptyStateMaxWidth,
     required this.minTouchTarget,
     required this.statusDotSize,
+    required this.drawerIconSize,
     required this.inkPadHeight,
     required this.inkStrokeWidth,
   });
@@ -395,6 +396,7 @@ class AppMetrics {
     emptyStateMaxWidth: 560,
     minTouchTarget: 44,
     statusDotSize: 7,
+    drawerIconSize: 28,
     inkPadHeight: 120,
     inkStrokeWidth: 2.5,
   );
@@ -455,6 +457,9 @@ class AppMetrics {
 
   /// 状态点视觉直径 7dp（热区靠透明 padding 补足）。
   final double statusDotSize;
+
+  /// 导航抽屉目的地图标直径（dp）——放大抽屉功能项触控与视觉比重。
+  final double drawerIconSize;
 
   /// 手写书写带高度（dp）。
   final double inkPadHeight;
@@ -655,6 +660,7 @@ AppMetrics _lerpMetrics(AppMetrics a, AppMetrics b, double t) {
     emptyStateMaxWidth: m(a.emptyStateMaxWidth, b.emptyStateMaxWidth),
     minTouchTarget: m(a.minTouchTarget, b.minTouchTarget),
     statusDotSize: m(a.statusDotSize, b.statusDotSize),
+    drawerIconSize: m(a.drawerIconSize, b.drawerIconSize),
     inkPadHeight: m(a.inkPadHeight, b.inkPadHeight),
     inkStrokeWidth: m(a.inkStrokeWidth, b.inkStrokeWidth),
   );

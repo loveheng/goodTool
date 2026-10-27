@@ -26,7 +26,7 @@
         android:protectionLevel="signature" />
 
     <application
-        android:label="goodTools"
+        android:label="工具"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"

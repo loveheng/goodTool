@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../ui_ports/settings_port.dart';
 import 'components/app_components.dart';
+import 'home_shell.dart';
 
 /// 能力域枚举（hub 导航 / 首页快捷 / main.dart 装配共用）。
 enum AppDomain { calculator, calendar, geo, weather }
@@ -162,14 +163,33 @@ class _CapabilitiesPageState extends State<CapabilitiesPage> {
   @override
   Widget build(BuildContext context) {
     final t = tokensOf(context);
+    final nav = ShellNav.maybeOf(context);
     return ListView(
       padding: EdgeInsets.all(t.metrics.space16),
       children: <Widget>[
-        Text('能力', style: t.typeScale.titleMedium),
-        SizedBox(height: t.metrics.space4),
-        Text(
-          '不依赖外部模型，自行验证内核正确性；与 Agent 侧 MCP 工具面共享同一内核。',
-          style: t.typeScale.micro.copyWith(color: t.palette.textMuted),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            if (nav != null)
+              IconButton(
+                onPressed: nav.openDrawer,
+                icon: const Icon(Icons.menu),
+                tooltip: '导航',
+              ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text('能力', style: t.typeScale.titleMedium),
+                  SizedBox(height: t.metrics.space4),
+                  Text(
+                    '不依赖外部模型，自行验证内核正确性；与 Agent 侧 MCP 工具面共享同一内核。',
+                    style: t.typeScale.micro.copyWith(color: t.palette.textMuted),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
         SizedBox(height: t.metrics.space16),
         for (final entry in kDomainEntries) ...<Widget>[

@@ -51,6 +51,7 @@ class EventView {
     required this.end,
     required this.isAllDay,
     required this.source,
+    this.feedName,
     this.location,
     this.description,
   });
@@ -62,6 +63,10 @@ class EventView {
 
   /// 来源（`system` / `feed`）。
   final String source;
+
+  /// 来源显示名（系统 = 日历名「工作/个人/节假日」；订阅 = feed 名）。
+  /// 归一化来源标签用；null/空 = 不显示。
+  final String? feedName;
 
   final String? location;
 
@@ -451,6 +456,7 @@ class CalendarPort {
         end: e.end,
         isAllDay: e.isAllDay,
         source: e.source,
+        feedName: e.feedName,
         location: e.location,
         description: e.description,
       );

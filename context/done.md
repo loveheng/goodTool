@@ -27,3 +27,6 @@ format: v2
 - [2026-10-20] S8 Contract 收尾：删除 McpServer._dispatch 的 suggest_user_setting 工具名嗅探特例（内核不再感知业务工具名），建议通道上移为 McpController.pushSuggestion；订正 serverInfo 与前台服务通知的模板项目名残留 (src: ai) (域: domain_gateway)
 - [2026-10-20] 风险项清零：McpServer._dispatch 的 suggest_user_setting 工具名特例（原将随网关改名静默失效）已在 S8 删除，四份文档口径同步为 pushSuggestion (src: ai) (域: misc)
 - [2026-10-21] SDK 0.2.0 可见性对齐（域网关层）：`lib/mcp/category_tool_face.dart` 增 `ToolVisibility`（默认 `private` / default-deny）并由 `CategoryTool.toSchema()` 下发 `_meta.goodhub.visibility`；四个聚合工具统一标 `shared`；新增 3 项单测（四域 shared + 默认 private + shared 线级值）；index.md / domain_gateway.md 同步 (src: ai) (域: domain_gateway)
+- [2026-10-27] 月格事件密度点分级（1~3 枚），修 _DayCell 文档与实现不符（文档写最多3枚，实现恒1枚） (src: ai, 用户) (src: ai) (域: ui-console)
+- [2026-10-27] 事件面板条目可点展开完整描述/跳系统日历查看，只读红线内补信息出口（现描述 maxLines:2 截断不可看全文） (src: ai, 用户) (src: ai) (域: ui-console)
+- [2026-10-27] 日历补「跳转到指定日期」通道：远日期直达入口（日期选择器/输入），作为三级缩放手势之外的等价可见控件 (src: ai, 用户) (src: ai) (域: ui-console)

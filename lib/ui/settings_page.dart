@@ -12,6 +12,7 @@ import '../ui_ports/settings_port.dart';
 import '../ui_ports/status_port.dart';
 import 'components/app_components.dart';
 import 'components/readiness_components.dart';
+import 'home_shell.dart';
 import 'mcp_service_page.dart';
 
 /// 设置页：敏感设置自决 + 「关于」长按隐藏入口（MCP 调试服务控制）。
@@ -237,9 +238,24 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     final t = tokensOf(context);
+    final nav = ShellNav.maybeOf(context);
     return ListView(
       padding: EdgeInsets.all(t.metrics.space16),
       children: <Widget>[
+        Row(
+          children: <Widget>[
+            if (nav != null)
+              IconButton(
+                onPressed: nav.openDrawer,
+                icon: const Icon(Icons.menu),
+                tooltip: '导航',
+              ),
+            Expanded(
+              child: Text('设置', style: t.typeScale.titleMedium),
+            ),
+          ],
+        ),
+        SizedBox(height: t.metrics.space8),
         if (_feedback != null) ...<Widget>[
           _FeedbackBanner(message: _feedback!, isError: _feedbackIsError),
           SizedBox(height: t.metrics.space16),
@@ -292,10 +308,6 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ),
         SizedBox(height: t.metrics.space16),
-        // MCP HTTP 调试服务控制收进隐藏页（2026-10-20 产品决策：不随启动自启，
-        // 仅 adb 直连）——设置页只留「关于」长按入口，控制面不暴露在日常视线里。
-        _AboutCard(onOpenService: _openServicePage),
-        SizedBox(height: t.metrics.space16),
         SectionCard(
           title: '地图厂商 API Key',
           child: _ApiKeySection(
@@ -339,30 +351,6 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             onClear: () => _savePlainSetting(SettingsKeys.qweatherHost, ''),
             saving: _savingKey == SettingsKeys.qweatherHost,
-          ),
-        ),
-        SizedBox(height: t.metrics.space16),
-        SectionCard(
-          title: '隐私与脱敏',
-          child: Column(
-            children: <Widget>[
-              _SwitchRow(
-                label: '日程敏感字段过滤',
-                detail: '对日程地点与描述中的电话、邮箱做掩码（默认开；标题不脱敏）',
-                value: _snapshot?.isSwitchOn(SettingsKeys.privacyMaskPii) ??
-                    false,
-                onChanged: (v) => _toggleSwitch(SettingsKeys.privacyMaskPii, v),
-              ),
-              SizedBox(height: t.metrics.space8),
-              _SwitchRow(
-                label: '模糊定位',
-                detail: '对外暴露的位置降精度（防止精确轨迹泄露）',
-                value: _snapshot?.isSwitchOn(SettingsKeys.privacyBlurLocation) ??
-                    false,
-                onChanged: (v) =>
-                    _toggleSwitch(SettingsKeys.privacyBlurLocation, v),
-              ),
-            ],
           ),
         ),
         SizedBox(height: t.metrics.space16),
@@ -437,6 +425,34 @@ class _SettingsPageState extends State<SettingsPage> {
             ],
           ),
         ),
+        SizedBox(height: t.metrics.space16),
+        SectionCard(
+          title: '隐私与脱敏',
+          child: Column(
+            children: <Widget>[
+              _SwitchRow(
+                label: '日程敏感字段过滤',
+                detail: '对日程地点与描述中的电话、邮箱做掩码（默认开；标题不脱敏）',
+                value: _snapshot?.isSwitchOn(SettingsKeys.privacyMaskPii) ??
+                    false,
+                onChanged: (v) => _toggleSwitch(SettingsKeys.privacyMaskPii, v),
+              ),
+              SizedBox(height: t.metrics.space8),
+              _SwitchRow(
+                label: '模糊定位',
+                detail: '对外暴露的位置降精度（防止精确轨迹泄露）',
+                value: _snapshot?.isSwitchOn(SettingsKeys.privacyBlurLocation) ??
+                    false,
+                onChanged: (v) =>
+                    _toggleSwitch(SettingsKeys.privacyBlurLocation, v),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(height: t.metrics.space16),
+        // MCP HTTP 调试服务控制收进隐藏页（2026-10-20 产品决策：不随启动自启，
+        // 仅 adb 直连）——设置页只留「关于」长按入口，控制面不暴露在日常视线里。
+        _AboutCard(onOpenService: _openServicePage),
         if (_loading) ...<Widget>[
           SizedBox(height: t.metrics.space16),
           Text('读取设置中…', style: t.typeScale.body),
